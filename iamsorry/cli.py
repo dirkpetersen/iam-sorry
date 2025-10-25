@@ -381,8 +381,20 @@ def main():
     manager_username = get_current_iam_user(manager_profile)
 
     if args.chown:
-        # With --chown, we bypass prefix validation (one-time delegation to another user)
+        # With --chown, we bypass prefix validation for the manager
+        # BUT we MUST validate that the target user matches the OWNER's prefix
         owner_username = args.chown
+
+        # Validate that target user matches owner's prefix
+        is_valid, reason = validate_username_prefix(owner_username, iam_username)
+        if not is_valid:
+            print(
+                f"Error: When delegating to '{owner_username}', the user must match their prefix",
+                file=sys.stderr,
+            )
+            print(f"Details: {reason}", file=sys.stderr)
+            sys.exit(1)
+
         print(f"⚠ Delegating user '{iam_username}' to '{owner_username}' (one-time operation)")
     else:
         # Normal case: validate prefix matching
