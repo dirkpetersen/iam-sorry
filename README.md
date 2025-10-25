@@ -458,7 +458,12 @@ The IAM policy includes a one-time tagging approach to enforce permanent restric
      --tags Key=manager-locked,Value=true Key=managed-by,Value=dirk-admin
    ```
 
-2. **Manager CANNOT remove tags** (permanent lock):
+2. **Manager can VIEW tags** (for audit trail):
+   ```bash
+   aws iam list-user-tags --user-name dirk-bedrock
+   ```
+
+3. **Manager CANNOT remove tags** (permanent lock):
    ```bash
    # This will be DENIED by the IAM policy
    aws iam untag-user --user-name dirk-bedrock --tag-keys manager-locked
@@ -467,12 +472,13 @@ The IAM policy includes a one-time tagging approach to enforce permanent restric
 
 **IAM Policy Statements**:
 
-- ✅ `AddRestrictionTags`: Allows `iam:TagUser` on namespace users
-- ❌ `PreventTagRemoval`: Denies `iam:UntagUser` on namespace users
+- ✅ `ManageRestrictionTags`: Allows `iam:TagUser` and `iam:ListUserTags` on namespace users
+- ❌ `PreventTagRemovalOrModification`: Denies `iam:UntagUser` on namespace users
 
 **Use Case**:
 
 - Manager sets up restriction tags when creating user
+- Manager can view tags to audit what restrictions are in place
 - Tags remain permanent (manager cannot remove them)
 - Provides tamper-proof audit trail
 - Prevents accidental or malicious tag removal

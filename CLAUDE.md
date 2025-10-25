@@ -136,19 +136,21 @@ This ensures AWS enforces the prefix restriction even if the CLI validation is b
 
 The IAM policy includes statements to enforce permanent restrictions via tagging:
 
-**AddRestrictionTags Statement**:
-- Allows `iam:TagUser` on prefix-matched users
-- Managers can apply restriction tags during user setup
+**ManageRestrictionTags Statement**:
+- Allows `iam:TagUser` on prefix-matched users (add restriction tags)
+- Allows `iam:ListUserTags` on prefix-matched users (view applied tags)
+- Managers can apply and audit tags during user setup
 - Tags are one-time setup operations
 
-**PreventTagRemoval Statement**:
-- Denies `iam:UntagUser` on prefix-matched users
+**PreventTagRemovalOrModification Statement**:
+- Denies `iam:UntagUser` on prefix-matched users (prevent tag removal)
 - Uses Effect: Deny (explicit deny overrides any allow)
 - Prevents managers from removing tags after initial setup
 - Ensures restrictions remain permanent and tamper-proof
 
 **Use Cases**:
 - Manager applies tags to newly created users
+- Manager views tags to audit what restrictions are in place
 - Tags define access controls, service restrictions, cost centers, etc.
 - Once applied, tags cannot be modified by the same manager
 - Provides audit trail and prevents privilege escalation
@@ -156,18 +158,23 @@ The IAM policy includes statements to enforce permanent restrictions via tagging
 **Example Policy Section**:
 ```json
 {
-  "Sid": "AddRestrictionTags",
+  "Sid": "ManageRestrictionTags",
   "Effect": "Allow",
-  "Action": ["iam:TagUser"],
+  "Action": ["iam:TagUser", "iam:ListUserTags"],
   "Resource": ["arn:aws:iam::123456789012:user/dirk", "arn:aws:iam::123456789012:user/dirk-*"]
 },
 {
-  "Sid": "PreventTagRemoval",
+  "Sid": "PreventTagRemovalOrModification",
   "Effect": "Deny",
   "Action": ["iam:UntagUser"],
   "Resource": ["arn:aws:iam::123456789012:user/dirk", "arn:aws:iam::123456789012:user/dirk-*"]
 }
 ```
+
+**Group Management**:
+- Managers are NOT allowed to add/remove users from groups
+- CreateUsers statement only allows `iam:CreateUser`
+- Group management is restricted to avoid unauthorized access escalation
 
 ## Command Reference
 
