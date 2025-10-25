@@ -86,14 +86,8 @@ def main():
     # Handle --print-policy flag
     if args.print_policy:
         # Determine which profile to use for getting user/account info
-        manager_profile = args.profile or os.environ.get("AWS_PROFILE")
-
-        if not manager_profile:
-            print(
-                "Error: No manager profile specified. Use --profile or set AWS_PROFILE environment variable",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        # Default to iam-sorry if not specified
+        manager_profile = args.profile or os.environ.get("AWS_PROFILE") or "iam-sorry"
 
         try:
             current_user = get_current_iam_user(manager_profile)
