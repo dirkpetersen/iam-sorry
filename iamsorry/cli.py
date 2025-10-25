@@ -531,6 +531,18 @@ def main():
                 )
                 print(f"Details: {reason}", file=sys.stderr)
                 sys.exit(1)
+
+            # Verify that the delegated owner exists as an IAM user
+            if not verify_iam_user_exists(manager_profile, owner_username):
+                print(
+                    f"Error: Cannot delegate to '{owner_username}' - user does not exist in IAM",
+                    file=sys.stderr,
+                )
+                print(
+                    f"The owner must be an existing IAM user to delegate credentials to them.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
         else:
             # Normal case: validate prefix matching for manager
             is_valid, reason = validate_username_prefix(manager_username, iam_username)
@@ -584,6 +596,18 @@ def main():
                     file=sys.stderr,
                 )
                 print(f"Details: {reason}", file=sys.stderr)
+                sys.exit(1)
+
+            # Verify that the delegated owner exists as an IAM user
+            if not verify_iam_user_exists(manager_profile, owner_username):
+                print(
+                    f"Error: Cannot delegate to '{owner_username}' - user does not exist in IAM",
+                    file=sys.stderr,
+                )
+                print(
+                    f"The owner must be an existing IAM user to delegate credentials to them.",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
 
             print(f"⚠ Delegating user '{iam_username}' to '{owner_username}' (one-time operation)")

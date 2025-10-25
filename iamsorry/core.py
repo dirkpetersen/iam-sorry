@@ -456,16 +456,25 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
     """
     Generate a least-privilege IAM policy for the current user to act as usermanager.
 
-    This policy enforces username prefix matching for credential management:
+    This policy enforces username prefix matching:
     - Manager "dirk-admin" can manage users starting with "dirk-" or exactly "dirk"
     - Manager "alice" can manage users starting with "alice-"
     - Prefix is everything before the first hyphen (or entire username if no hyphen)
 
     Policy Structure:
-    - CreateUser: Allows creating ANY user (needed for --chown delegation to other managers)
+    - CreateUsers: Allows creating users in manager's namespace
+    - CreateUsersDelegation: Allows creating ANY user for --chown delegation
     - ManageUserCredentials: Restricted to prefix-matched users only
     - ManageRestrictionTags: Restricted to prefix-matched users only
     - PreventTagRemovalOrModification: Prevents removing tags from prefix-matched users
+
+    --chown Delegation:
+    - Manager can create users outside their namespace using --chown
+    - User must have prefix matching the delegated owner's prefix
+    - Example: peterdir-mgr can create cj-moin if cj is an existing IAM user
+    - Policy allows: CreateUsersDelegation permits creating any user (unrestricted at IAM level)
+    - CLI validates: The delegated owner MUST exist as an IAM user before allowing delegation
+    - This ensures managers only delegate to real, existing users
 
     Tagging Strategy:
     - Manager can TAG users to add restrictions (one-time setup)
@@ -505,7 +514,13 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
                 "Sid": "CreateUsers",
                 "Effect": "Allow",
                 "Action": ["iam:CreateUser"],
-                "Resource": "*",  # Allow creating ANY user (needed for --chown delegation)
+                "Resource": namespace_resources,
+            },
+            {
+                "Sid": "CreateUsersDelegation",
+                "Effect": "Allow",
+                "Action": ["iam:CreateUser"],
+                "Resource": "arn:aws:iam::*:user/*",
             },
             {
                 "Sid": "ManageUserCredentials",
