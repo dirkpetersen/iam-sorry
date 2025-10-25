@@ -246,6 +246,113 @@ def get_aws_credentials_path():
     return aws_creds
 
 
+def get_current_iam_user(profile_name):
+    """
+    Get the current IAM username using STS GetCallerIdentity.
+
+    Args:
+        profile_name: AWS profile to use
+
+    Returns:
+        str: IAM username
+
+    Raises:
+        Exception: If unable to determine current user
+    """
+    try:
+        session = boto3.Session(profile_name=profile_name)
+        sts_client = session.client("sts")
+        response = sts_client.get_caller_identity()
+        # ARN format: arn:aws:iam::ACCOUNT_ID:user/USERNAME
+        arn = response["Arn"]
+        if ":user/" in arn:
+            username = arn.split(":user/")[1]
+            return username
+        return None
+    except Exception as e:
+        print(f"Error: Failed to get current IAM user", file=sys.stderr)
+        print(f"Details: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def get_aws_account_id(profile_name):
+    """
+    Get the AWS account ID using STS GetCallerIdentity.
+
+    Args:
+        profile_name: AWS profile to use
+
+    Returns:
+        str: AWS account ID
+
+    Raises:
+        Exception: If unable to determine account ID
+    """
+    try:
+        session = boto3.Session(profile_name=profile_name)
+        sts_client = session.client("sts")
+        response = sts_client.get_caller_identity()
+        return response["Account"]
+    except Exception as e:
+        print(f"Error: Failed to get AWS account ID", file=sys.stderr)
+        print(f"Details: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def generate_usermanager_policy(profile_name):
+    """
+    Generate a least-privilege IAM policy for the current user to act as usermanager.
+
+    Args:
+        profile_name: AWS profile to use for lookups
+
+    Returns:
+        dict: IAM policy document
+    """
+    import json
+
+    account_id = get_aws_account_id(profile_name)
+    current_user = get_current_iam_user(profile_name)
+
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "CreateUsers",
+                "Effect": "Allow",
+                "Action": ["iam:CreateUser", "iam:AddUserToGroup", "iam:RemoveUserFromGroup"],
+                "Resource": f"arn:aws:iam::{account_id}:user/*",
+            },
+            {
+                "Sid": "ManageUserCredentials",
+                "Effect": "Allow",
+                "Action": [
+                    "iam:CreateAccessKey",
+                    "iam:DeleteAccessKey",
+                    "iam:UpdateAccessKey",
+                    "iam:ListAccessKeys",
+                    "iam:GetAccessKeyLastUsed",
+                ],
+                "Resource": f"arn:aws:iam::{account_id}:user/*",
+            },
+            {
+                "Sid": "ListUsersForLookup",
+                "Effect": "Allow",
+                "Action": ["iam:ListUsers", "iam:ListAccessKeys", "iam:GetUser"],
+                "Resource": "*",
+            },
+            {
+                "Sid": "STSGetSessionToken",
+                "Effect": "Allow",
+                "Action": ["sts:GetSessionToken"],
+                "Resource": "*",
+            },
+        ],
+    }
+
+    return policy
+
+
 def read_aws_credentials(creds_file, auto_decrypt=False):
     """
     Read AWS credentials file.

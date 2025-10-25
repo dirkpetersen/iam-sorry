@@ -21,7 +21,10 @@ __license__ = "MIT"
 from .core import (
     decrypt_credential,
     encrypt_credential,
+    generate_usermanager_policy,
+    get_aws_account_id,
     get_aws_credentials_path,
+    get_current_iam_user,
     get_iam_user_for_access_key,
     get_temp_credentials_for_user,
     is_ssh_key_password_protected,
@@ -42,4 +45,7 @@ __all__ = [
     "verify_iam_user_exists",
     "get_temp_credentials_for_user",
     "update_profile_credentials",
+    "get_current_iam_user",
+    "get_aws_account_id",
+    "generate_usermanager_policy",
 ]

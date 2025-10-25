@@ -3,12 +3,16 @@ Command-line interface for iam-sorry.
 """
 
 import argparse
+import json
 import os
 import sys
 
 from .core import (
     encrypt_credential,
+    generate_usermanager_policy,
+    get_aws_account_id,
     get_aws_credentials_path,
+    get_current_iam_user,
     get_iam_user_for_access_key,
     get_ssh_key_path,
     get_temp_credentials_for_user,
@@ -26,7 +30,8 @@ def main():
         epilog="Examples:\n"
         "  AWS_PROFILE=usermanager iam-sorry admin\n"
         "  iam-sorry --profile usermanager admin\n"
-        "  AWS_PROFILE=usermanager iam-sorry  (refresh default profile)",
+        "  AWS_PROFILE=usermanager iam-sorry  (refresh iam-sorry profile)\n"
+        "  iam-sorry --profile usermanager --print-policy  (show personalized IAM policy)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -64,14 +69,46 @@ def main():
         help="Output shell export statements for a profile's credentials (for eval in shell scripts). If no profile specified, uses --profile value.",
     )
     parser.add_argument(
+        "--print-policy",
+        action="store_true",
+        help="Print the recommended IAM policy for the current user (personalized with account ID and username)",
+    )
+    parser.add_argument(
         "profile_to_manage",
         nargs="?",
         default=None,
         help="Profile name to update. If profile exists, uses its access key to determine IAM user. "
-        "If not, treats it as an IAM username. If omitted, will prompt to use 'default' profile.",
+        "If not, treats it as an IAM username. If omitted, will prompt to use 'iam-sorry' profile.",
     )
 
     args = parser.parse_args()
+
+    # Handle --print-policy flag
+    if args.print_policy:
+        # Determine which profile to use for getting user/account info
+        manager_profile = args.profile or os.environ.get("AWS_PROFILE")
+
+        if not manager_profile:
+            print(
+                "Error: No manager profile specified. Use --profile or set AWS_PROFILE environment variable",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        try:
+            current_user = get_current_iam_user(manager_profile)
+            policy = generate_usermanager_policy(manager_profile)
+
+            # Print with nice formatting
+            print(f"# IAM Policy for usermanager: {current_user}")
+            print(f"# Account: {policy['Statement'][0]['Resource'].split(':')[4]}")
+            print(f"# Generated for: {current_user}")
+            print()
+            print(json.dumps(policy, indent=2))
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: Failed to generate policy: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Handle --show-encrypted flag for debugging
     if args.show_encrypted:
@@ -199,41 +236,41 @@ def main():
         print(f"✓ Manager profile '{manager_profile}' encrypted with SSH key")
         sys.exit(0)
 
-    # If no profile_to_manage is specified, ask about default profile
+    # If no profile_to_manage is specified, ask about iam-sorry profile
     if args.profile_to_manage is None:
         creds_file = get_aws_credentials_path()
         # Auto-decrypt encrypted credentials when needed
         creds_config = read_aws_credentials(creds_file, auto_decrypt=True)
 
-        if "default" not in creds_config:
+        if "iam-sorry" not in creds_config:
             print(
-                "Error: 'default' profile does not exist in credentials file",
+                "Error: 'iam-sorry' profile does not exist in credentials file",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        # Verify the default profile has credentials and can determine user
-        access_key = creds_config["default"].get("aws_access_key_id")
+        # Verify the iam-sorry profile has credentials and can determine user
+        access_key = creds_config["iam-sorry"].get("aws_access_key_id")
         if not access_key:
             print(
-                "Error: 'default' profile has no aws_access_key_id",
+                "Error: 'iam-sorry' profile has no aws_access_key_id",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        # Verify we can determine the IAM user for the default profile
+        # Verify we can determine the IAM user for the iam-sorry profile
         iam_username = get_iam_user_for_access_key(manager_profile, access_key)
         if not iam_username:
             print(
-                "Error: Could not determine IAM user for 'default' profile",
+                "Error: Could not determine IAM user for 'iam-sorry' profile",
                 file=sys.stderr,
             )
             sys.exit(1)
 
         # Ask user for confirmation
-        print(f"No profile specified. Found 'default' profile with user: {iam_username}")
+        print(f"No profile specified. Found 'iam-sorry' profile with user: {iam_username}")
         response = (
-            input("Do you want to refresh credentials for the 'default' profile? (y/n): ")
+            input("Do you want to refresh credentials for the 'iam-sorry' profile? (y/n): ")
             .strip()
             .lower()
         )
@@ -242,7 +279,7 @@ def main():
             print("Aborted.")
             sys.exit(0)
 
-        args.profile_to_manage = "default"
+        args.profile_to_manage = "iam-sorry"
 
     # Validate duration (convert hours to seconds)
     if args.duration < 1:  # Minimum 1 hour
