@@ -194,6 +194,34 @@ AWS_PROFILE=usermanager ./aws-creds admin
 AWS_PROFILE=usermanager ./aws-creds
 ```
 
+### Print Policy
+
+```bash
+# Show the recommended IAM policy using current Unix username as prefix
+iam-sorry --print-policy
+
+# Show the recommended IAM policy for a specific namespace prefix
+iam-sorry --print-policy iam
+iam-sorry --print-policy alice
+iam-sorry --print-policy bob
+
+# Output includes:
+# 1. JSON policy document personalized for the namespace
+# 2. Step-by-step instructions for AWS administrator
+# 3. Console instructions for attaching inline policy
+```
+
+**Behavior**:
+- `--print-policy` (no argument): Uses current Unix shell username as the prefix (via `pwd.getpwuid(os.getuid())`)
+- `--print-policy <PREFIX>` (with argument): Uses the specified prefix
+- Generated policy shows which IAM users the manager can create and manage
+- Example: Manager with prefix `iam` can manage `iam` and `iam-*` users
+- Output ends with instructions for AWS administrator including:
+  - User creation guidance (e.g., create `dp-mgr` with `-mgr` suffix)
+  - IAM Console navigation path
+  - Steps to attach inline policy via JSON
+  - Credentials configuration command
+
 ### Encryption (Manager Profile Only)
 
 ```bash
@@ -508,3 +536,154 @@ To add alternative encryption (GPG, master password, etc):
 4. **MFA**: Enable for IAM users with powerful permissions
 5. **CloudTrail**: Audit credential usage
 6. **Secrets Manager**: For application secrets, not user credentials
+
+## Recent Improvements & Bug Fixes
+
+### User-Facing Features (Session 2024-10-25)
+
+1. **Auto-Create Users in Namespace**:
+   - Users matching manager's namespace prefix are auto-created if they don't exist
+   - Prefix validation happens first (no AWS API calls until validated)
+   - Workflow: `./iam-sorry iam-bedrock` → creates user, generates credentials
+   - Previously required `--chown` for user creation
+
+2. **AWS Config File Generation**:
+   - `~/.aws/config` is auto-populated when creating new profiles
+   - Profile section format: `[profile NAME]` (or `[default]` for default profile)
+   - Region is automatically read from `iam-sorry` profile in config
+   - Region is printed during profile creation: `✓ Region: us-west-2`
+
+3. **Default Profile Behavior** (with Safety Checks):
+   - When no profile name specified, defaults to management profile (`iam-sorry` by default)
+   - Can be overridden via: `--profile` argument → `AWS_PROFILE` env var → `iam-sorry` default
+   - **CRITICAL SAFETY**: Prevents refreshing the management profile with temporary credentials
+   - **CRITICAL SAFETY**: Enforces encryption on iam-sorry profile credentials
+   - If credentials not encrypted: shows error with `iam-sorry --encrypt` command
+   - If user tries `./iam-sorry` explicitly: shows error with guidance to create temporary profiles
+   - Exceptions: `--encrypt`, `--print-policy`, `--eval` work before encryption check
+
+4. **Improved Help Text**:
+   - `--profile`: Clear explanation of default and override hierarchy
+   - `--encrypt`: Now says "Encrypt the iam-sorry profile" instead of vague "manager profile"
+   - Profile argument: Explains it defaults to management profile when omitted
+
+### Critical Safety Mechanisms
+
+**Enforce iam-sorry Profile Encryption**:
+- Before any credential generation operations, checks if iam-sorry profile is encrypted
+- Reads raw credentials (without decryption) to detect encryption prefix `__encrypted__:`
+- If credentials are NOT encrypted:
+  - Stops with clear error message
+  - Provides exact command to fix: `iam-sorry --encrypt`
+  - Does NOT block bootstrap operations (`--encrypt`, `--print-policy`, `--eval`)
+- Location: `cli.py:384-415`
+- Impact: Ensures permanent credentials are NEVER stored in plaintext
+
+**Prevent Management Profile Refresh**:
+- The `iam-sorry` profile contains permanent manager credentials
+- These credentials should NEVER be refreshed with temporary credentials
+- Added validation to reject any attempt to refresh the management profile
+- Error message guides user to create temporary profiles instead: `./iam-sorry iam-bedrock`
+- Applies to both explicit profile name and implicit default profile
+- Location: `cli.py:310-332`
+
+### Critical Bug Fixes
+
+1. **Buffer Overflow Prevention** (SSH Key Parsing):
+   - Added bounds checking on OPENSSH key format parsing
+   - Validates `cipher_len` against buffer size and max 1024 bytes
+   - Prevents malformed SSH keys from causing crashes
+   - Location: `core.py:77-79`
+
+2. **Tag Check Before User Creation** (Race Condition):
+   - Moved owner tag validation from after credential generation to before
+   - Prevents resource waste if user already delegated
+   - Stops inconsistent state if multiple processes try to --chown simultaneously
+   - Location: `cli.py:359-372`
+
+3. **Nonce Length Validation** (Encryption):
+   - Validates encrypted data is at least 29 bytes (12-byte nonce + 1-byte ciphertext + 16-byte auth tag)
+   - Prevents IndexError on corrupted encrypted data
+   - Clear error message about data corruption
+   - Location: `core.py:215-220`
+
+### Moderate Bug Fixes
+
+4. **ARN Parsing for Non-User Credentials**:
+   - Now detects and rejects assumed roles, federated users, and root account
+   - Each ARN type has specific error message with actionable fix
+   - Prevents confusing errors when using role credentials
+   - Location: `core.py:278-313`
+
+5. **Credential Refresh Permission Validation**:
+   - Checks owner tags in `--eval` auto-refresh path
+   - Prevents original manager from bypassing delegation
+   - Ensures only owner can refresh delegated user credentials
+   - Location: `cli.py:179-205`
+
+6. **Race Condition in Tag Application** (--chown):
+   - Implements retry logic with exponential backoff (3 attempts)
+   - Re-checks tags immediately before applying (not just initially)
+   - Detects if another process delegated the user while waiting
+   - Location: `cli.py:485-524`
+
+### Minor Bug Fixes & Improvements
+
+7. **Empty Username Validation**:
+   - Rejects empty or whitespace-only usernames in prefix validation
+   - Validates both manager and target usernames
+   - Location: `core.py:325-330`
+
+8. **Enhanced SSH Key Error Messages**:
+   - `FileNotFoundError`: Shows how to generate ED25519 key or configure path
+   - `PermissionError`: Shows exact chmod command needed
+   - Decryption failures: Lists possible causes (wrong key, tampered data, passphrase changed)
+   - Location: `core.py:120-136, 205-243`
+
+9. **ConfigParser Case Sensitivity**:
+   - Fixed AWS credential key case preservation with `config.optionxform = str`
+   - Ensures `AWS_ACCESS_KEY_ID` is not lowercased to `aws_access_key_id`
+   - Location: `core.py:547`
+
+### Security Improvements
+
+10. **Shell Injection Prevention**:
+    - Uses `shlex.quote()` for all credential values in export statements
+    - Prevents malformed credentials from breaking shell syntax
+    - Location: `cli.py:247-250`
+
+11. **File Permissions Race Condition**:
+    - Uses `os.open()` with `O_CREAT` and mode `0o600` atomically
+    - Prevents brief window where credentials are world-readable during file creation
+    - Eliminates separate `chmod()` call that could race with other processes
+    - Location: `core.py:569-576`
+
+### Implementation Details
+
+**New Functions**:
+- `get_aws_config_path()`: Returns `~/.aws/config` path
+- Enhanced `update_profile_credentials()`: Now creates config file with region
+
+**Modified Functions**:
+- `validate_username_prefix()`: Added empty string validation
+- `get_current_iam_user()`: Enhanced with ARN type detection
+- `decrypt_credential()`: Better error messages for failures
+- `derive_encryption_key_from_ssh_key()`: Better error messages
+- `write_aws_credentials()`: Atomic file creation with secure permissions
+- `update_profile_credentials()`: Auto-creates config file with region
+
+**CLI Changes**:
+- Prefix validation moved before AWS API calls for performance
+- Auto-create logic integrated into normal workflow (no --chown required)
+- Region printing on profile creation
+- Retry logic for --chown delegation
+
+### Testing Notes
+
+All features tested with:
+- Namespace auto-creation: `./iam-sorry iam-fffurj` (auto-creates if matches prefix)
+- Config generation: Verified `~/.aws/config` created with correct region
+- Default profile: `./iam-sorry` defaults to iam-sorry profile
+- Encryption/decryption: Round-trip testing with various edge cases
+- ARN parsing: Tested with assumed roles and federated users
+- Shell injection: Special characters in credentials properly quoted

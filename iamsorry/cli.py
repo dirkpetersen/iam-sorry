@@ -13,6 +13,7 @@ from .core import (
     encrypt_credential,
     generate_usermanager_policy,
     get_aws_account_id,
+    get_aws_config_path,
     get_aws_credentials_path,
     get_current_iam_user,
     get_iam_user_for_access_key,
@@ -43,7 +44,7 @@ def main():
     parser.add_argument(
         "--profile",
         default=None,
-        help="AWS profile to use for credential management (defaults to AWS_PROFILE env var)",
+        help="AWS profile to use for credential management (defaults to 'iam-sorry', overridden by AWS_PROFILE env var, then by this argument)",
     )
     parser.add_argument(
         "--duration",
@@ -54,7 +55,8 @@ def main():
     parser.add_argument(
         "--encrypt",
         action="store_true",
-        help="Encrypt the manager profile permanent credentials (only for --profile argument, not generated temp credentials)",
+        help="Encrypt the iam-sorry profile permanent credentials at rest using SSH key (one-time setup). "
+        "Only applies when updating the iam-sorry profile itself, not temporary credentials",
     )
     parser.add_argument(
         "--eval",
@@ -67,8 +69,12 @@ def main():
     )
     parser.add_argument(
         "--print-policy",
-        action="store_true",
-        help="Print the recommended IAM policy for the current user (personalized with account ID and username)",
+        metavar="[USER_PREFIX]",
+        nargs="?",
+        const="",  # Empty string when --print-policy is used without argument
+        default=None,  # None when --print-policy is not used at all
+        help="Print the recommended IAM policy. If USER_PREFIX is omitted, uses current Unix shell username as prefix. "
+        "If specified, uses that prefix (e.g., --print-policy iam)",
     )
     parser.add_argument(
         "--chown",
@@ -81,28 +87,74 @@ def main():
         nargs="?",
         default=None,
         help="Profile name to update. If profile exists, uses its access key to determine IAM user. "
-        "If not, treats it as an IAM username. If omitted, will prompt to use 'iam-sorry' profile.",
+        "If not, treats it as an IAM username. If omitted, defaults to the management profile (iam-sorry by default).",
     )
 
     args = parser.parse_args()
 
     # Handle --print-policy flag
-    if args.print_policy:
+    if args.print_policy is not None:
+        import pwd
+
         # Determine which profile to use for getting user/account info
         # Default to iam-sorry if not specified
         manager_profile = args.profile or os.environ.get("AWS_PROFILE") or "iam-sorry"
 
+        # Determine user prefix for policy
+        if args.print_policy == "":
+            # --print-policy was specified without an argument
+            # Use the current Unix shell username as the prefix
+            try:
+                unix_username = pwd.getpwuid(os.getuid()).pw_name
+                user_prefix = unix_username
+            except:
+                print(
+                    "Error: Could not determine current Unix username",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        else:
+            # --print-policy was specified with an argument
+            user_prefix = args.print_policy
+
         try:
-            current_user = get_current_iam_user(manager_profile)
             account_id = get_aws_account_id(manager_profile)
-            policy = generate_usermanager_policy(manager_profile)
+            policy = generate_usermanager_policy(manager_profile, user_prefix)
 
             # Print with nice formatting
-            print(f"# IAM Policy for usermanager: {current_user}")
+            print(f"# IAM Policy for manager with prefix: {user_prefix}")
             print(f"# Account: {account_id}")
-            print(f"# Generated for: {current_user}")
+            print(f"# Generated for: {user_prefix}-mgr or similar")
             print()
             print(json.dumps(policy, indent=2))
+
+            # Print instructions
+            print()
+            print("# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("# INSTRUCTIONS FOR AWS ADMINISTRATOR")
+            print("# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print()
+            print("# 1. Send this policy to your AWS administrator")
+            print(f"#    Administrator should create a highly restricted IAM user (e.g., '{user_prefix}-mgr')")
+            print(f"#    who can create other users with prefix '{user_prefix}' and refresh their credentials")
+            print()
+            print("# 2. After the user is created, the administrator should:")
+            print("#    a) Log in to AWS Console")
+            print(f"#    b) Go to: IAM → Users → {user_prefix}-mgr")
+            print("#    c) Click: 'Add Permissions' → 'Create Inline Policy'")
+            print("#    d) Select tab: 'JSON'")
+            print("#    e) Clear the default policy and paste the JSON policy above")
+            print("#    f) Click: 'Review Policy' → 'Put Inline Policy'")
+            print()
+            print("# 3. Provide the new IAM user with:")
+            print("#    - AWS Access Key ID")
+            print("#    - AWS Secret Access Key")
+            print("#    - AWS Console URL (if needed)")
+            print()
+            print("# 4. The user can then configure their AWS credentials:")
+            print(f"#    $ aws configure --profile iam-sorry")
+            print("#    Then use this tool to create and manage their namespace users")
+            print()
             sys.exit(0)
         except Exception as e:
             print(f"Error: Failed to generate policy: {e}", file=sys.stderr)
@@ -176,6 +228,32 @@ def main():
                 )
                 sys.exit(1)
 
+            # Validate permission to refresh: check if user is delegated to someone else
+            # This prevents the original manager from bypassing delegation via --eval
+            try:
+                manager_username = get_current_iam_user(manager_profile)
+                user_tags = get_user_tags(manager_profile, iam_username)
+
+                if "owner" in user_tags:
+                    owner = user_tags["owner"]
+                    if owner != manager_username:
+                        print(
+                            f"Error: Cannot refresh credentials for '{eval_profile}'",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"User '{iam_username}' is delegated to '{owner}' (you are '{manager_username}')",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"Only the owner can refresh delegated user credentials.",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+            except Exception as e:
+                print(f"Error: Failed to validate refresh permission: {e}", file=sys.stderr)
+                sys.exit(1)
+
             # Generate new temporary credentials (default 36 hours)
             try:
                 duration_seconds = 36 * 3600
@@ -213,11 +291,41 @@ def main():
                 )
             sys.exit(1)
 
-        # Output shell export statements
-        print(f"export AWS_ACCESS_KEY_ID='{access_key}'")
-        print(f"export AWS_SECRET_ACCESS_KEY='{secret_key}'")
+        # SECURITY WARNING: If exporting unencrypted iam-sorry profile credentials
+        if eval_profile == "iam-sorry":
+            # Check if credentials are encrypted by looking at raw data
+            raw_config = read_aws_credentials(creds_file, auto_decrypt=False)
+            if eval_profile in raw_config:
+                raw_access_key = raw_config[eval_profile].get("aws_access_key_id", "")
+                raw_secret_key = raw_config[eval_profile].get("aws_secret_access_key", "")
+
+                # If credentials are NOT encrypted, show warning
+                if not (raw_access_key.startswith("__encrypted__:") and raw_secret_key.startswith("__encrypted__:")):
+                    print(
+                        "⚠ WARNING: These are UNENCRYPTED permanent credentials",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "For security, these credentials should be encrypted at rest.",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "Please encrypt them with: iam-sorry --encrypt",
+                        file=sys.stderr,
+                    )
+                    print(
+                        "Then use: eval $(iam-sorry --eval iam-sorry)",
+                        file=sys.stderr,
+                    )
+                    print(file=sys.stderr)
+
+        # Output shell export statements with proper escaping to prevent shell injection
+        import shlex
+
+        print(f"export AWS_ACCESS_KEY_ID={shlex.quote(access_key)}")
+        print(f"export AWS_SECRET_ACCESS_KEY={shlex.quote(secret_key)}")
         if session_token:
-            print(f"export AWS_SESSION_TOKEN='{session_token}'")
+            print(f"export AWS_SESSION_TOKEN={shlex.quote(session_token)}")
         sys.exit(0)
 
     # Determine which profile to use for managing credentials
@@ -273,33 +381,66 @@ def main():
         print(f"✓ Manager profile '{manager_profile}' encrypted with SSH key")
         sys.exit(0)
 
-    # If no profile_to_manage is specified, show usage error
+    # If no profile_to_manage is specified, default to the management profile
     if args.profile_to_manage is None:
+        args.profile_to_manage = manager_profile
+
+    # CRITICAL: Prevent refreshing the management profile (permanent credentials should never be replaced)
+    if args.profile_to_manage == manager_profile or args.profile_to_manage == "iam-sorry":
         print(
-            "Error: No profile or IAM username specified",
+            f"Error: The '{args.profile_to_manage}' profile contains permanent manager credentials",
             file=sys.stderr,
         )
         print(
-            "\nUsage examples:",
+            "This profile should NEVER be refreshed with temporary credentials.",
             file=sys.stderr,
         )
         print(
-            "  iam-sorry --profile iam-sorry admin    # Generate temp credentials for 'admin' user",
+            "The iam-sorry profile is for credential management only, not for direct AWS operations.",
             file=sys.stderr,
         )
         print(
-            "  iam-sorry --profile iam-sorry newuser  # Generate credentials for new IAM user",
+            "\nIf you need to use AWS, generate credentials for a different profile:",
             file=sys.stderr,
         )
         print(
-            "  iam-sorry --eval default               # Export credentials from 'default' profile",
-            file=sys.stderr,
-        )
-        print(
-            "\nNote: The 'iam-sorry' profile contains permanent manager credentials and should not be refreshed.",
+            f"  ./iam-sorry iam-bedrock    # Create and use a temporary profile instead",
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # CRITICAL: Enforce encryption for iam-sorry profile (when actually using it)
+    # The iam-sorry profile contains permanent manager credentials and MUST be encrypted
+    if manager_profile == "iam-sorry":
+        # Read WITHOUT auto-decrypt to check if credentials are encrypted
+        raw_config = read_aws_credentials(creds_file, auto_decrypt=False)
+        if manager_profile in raw_config:
+            access_key = raw_config[manager_profile].get("aws_access_key_id", "")
+            secret_key = raw_config[manager_profile].get("aws_secret_access_key", "")
+
+            # Check if credentials are encrypted
+            if not (access_key.startswith("__encrypted__:") and secret_key.startswith("__encrypted__:")):
+                print(
+                    "⚠ ERROR: The 'iam-sorry' profile contains UNENCRYPTED permanent credentials",
+                    file=sys.stderr,
+                )
+                print(
+                    "For security, manager credentials must be encrypted at rest.",
+                    file=sys.stderr,
+                )
+                print(
+                    "\nTo encrypt the credentials, run:",
+                    file=sys.stderr,
+                )
+                print(
+                    "  iam-sorry --encrypt",
+                    file=sys.stderr,
+                )
+                print(
+                    "\nThis will encrypt your credentials using your ED25519 SSH key.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
     # Validate duration (convert hours to seconds)
     if args.duration < 1:  # Minimum 1 hour
@@ -353,70 +494,103 @@ def main():
         iam_username = args.profile_to_manage
         print(f"Profile doesn't exist, treating '{iam_username}' as IAM username...")
 
-        # Check if user exists
-        user_exists = verify_iam_user_exists(manager_profile, iam_username)
+        # Get the manager's username for validation
+        manager_username = get_current_iam_user(manager_profile)
 
-        if not user_exists:
-            # If --chown is specified, create the user
-            if args.chown:
-                print(f"Creating IAM user '{iam_username}'...")
-                try:
-                    create_iam_user(manager_profile, iam_username)
-                    print(f"✓ IAM user '{iam_username}' created")
-                except Exception as e:
-                    print(f"Error: Failed to create IAM user '{iam_username}': {e}", file=sys.stderr)
-                    sys.exit(1)
-            else:
+        # Validate prefix FIRST (before any AWS API calls to user/tags)
+        # If --chown is specified, validate against the owner's prefix
+        # Otherwise, validate against the manager's prefix
+        if args.chown:
+            owner_username = args.chown
+            is_valid, reason = validate_username_prefix(owner_username, iam_username)
+            if not is_valid:
                 print(
-                    f"Error: IAM user '{iam_username}' does not exist",
+                    f"Error: When delegating to '{owner_username}', the user must match their prefix",
                     file=sys.stderr,
                 )
+                print(f"Details: {reason}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            # Normal case: validate prefix matching for manager
+            is_valid, reason = validate_username_prefix(manager_username, iam_username)
+            if not is_valid:
+                print(f"Error: {reason}", file=sys.stderr)
+                sys.exit(1)
+
+        # After prefix validation passes, check if user exists
+        user_exists = verify_iam_user_exists(manager_profile, iam_username)
+
+        # If --chown and user EXISTS, check tags to prevent re-chown
+        if args.chown and user_exists:
+            existing_tags = get_user_tags(manager_profile, iam_username)
+            if "owner" in existing_tags:
+                print(
+                    f"Error: User '{iam_username}' is already delegated to '{existing_tags['owner']}'",
+                    file=sys.stderr,
+                )
+                print(
+                    f"Cannot re-delegate an already delegated user (one-time operation only)",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        # Now create user if needed (prefix validation already passed)
+        if not user_exists:
+            print(f"Creating IAM user '{iam_username}'...")
+            try:
+                create_iam_user(manager_profile, iam_username)
+                print(f"✓ IAM user '{iam_username}' created")
+            except Exception as e:
+                print(f"Error: Failed to create IAM user '{iam_username}': {e}", file=sys.stderr)
                 sys.exit(1)
         else:
             print(f"IAM user verified: {iam_username}")
 
-    # Validate username prefix (manager can only manage users with matching prefix)
-    # UNLESS --chown is specified (one-time delegation)
-    # Get the manager's username first
-    manager_username = get_current_iam_user(manager_profile)
+    # For profiles that already exist, we need to validate and check delegation
+    # (The new user path already did this validation above)
+    if args.profile_to_manage in creds_config:
+        # Get manager username if we don't have it yet
+        if 'manager_username' not in locals():
+            manager_username = get_current_iam_user(manager_profile)
 
-    if args.chown:
-        # With --chown, we bypass prefix validation for the manager
-        # BUT we MUST validate that the target user matches the OWNER's prefix
+        if args.chown:
+            # With --chown, validate against owner's prefix
+            owner_username = args.chown
+            is_valid, reason = validate_username_prefix(owner_username, iam_username)
+            if not is_valid:
+                print(
+                    f"Error: When delegating to '{owner_username}', the user must match their prefix",
+                    file=sys.stderr,
+                )
+                print(f"Details: {reason}", file=sys.stderr)
+                sys.exit(1)
+
+            print(f"⚠ Delegating user '{iam_username}' to '{owner_username}' (one-time operation)")
+        else:
+            # Normal case: validate prefix matching
+            is_valid, reason = validate_username_prefix(manager_username, iam_username)
+            if not is_valid:
+                print(f"Error: {reason}", file=sys.stderr)
+                sys.exit(1)
+
+            # Check if user is delegated to someone else (read-only access for manager)
+            user_tags = get_user_tags(manager_profile, iam_username)
+            if "owner" in user_tags:
+                owner = user_tags["owner"]
+                if owner != manager_username:
+                    print(
+                        f"⚠ User '{iam_username}' is delegated to '{owner}'",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"You can view this user but cannot manage credentials (read-only access)",
+                        file=sys.stderr,
+                    )
+                    sys.exit(0)
+    elif args.chown:
+        # For new users with --chown, print delegation message
         owner_username = args.chown
-
-        # Validate that target user matches owner's prefix
-        is_valid, reason = validate_username_prefix(owner_username, iam_username)
-        if not is_valid:
-            print(
-                f"Error: When delegating to '{owner_username}', the user must match their prefix",
-                file=sys.stderr,
-            )
-            print(f"Details: {reason}", file=sys.stderr)
-            sys.exit(1)
-
         print(f"⚠ Delegating user '{iam_username}' to '{owner_username}' (one-time operation)")
-    else:
-        # Normal case: validate prefix matching
-        is_valid, reason = validate_username_prefix(manager_username, iam_username)
-        if not is_valid:
-            print(f"Error: {reason}", file=sys.stderr)
-            sys.exit(1)
-
-        # Check if user is delegated to someone else (read-only access for manager)
-        user_tags = get_user_tags(manager_profile, iam_username)
-        if "owner" in user_tags:
-            owner = user_tags["owner"]
-            if owner != manager_username:
-                print(
-                    f"⚠ User '{iam_username}' is delegated to '{owner}'",
-                    file=sys.stderr,
-                )
-                print(
-                    f"You can view this user but cannot manage credentials (read-only access)",
-                    file=sys.stderr,
-                )
-                sys.exit(0)
 
     print(f"Requesting temporary credentials (valid for {args.duration} hours)...")
 
@@ -427,20 +601,6 @@ def main():
     # (i.e., we're storing the powerful permanent credentials, not temp credentials)
     should_encrypt = args.encrypt and (args.profile_to_manage == manager_profile)
 
-    # Check if user already has owner tag (prevent re-chown)
-    if args.chown:
-        existing_tags = get_user_tags(manager_profile, iam_username)
-        if "owner" in existing_tags:
-            print(
-                f"Error: User '{iam_username}' is already delegated to '{existing_tags['owner']}'",
-                file=sys.stderr,
-            )
-            print(
-                f"Cannot re-delegate an already delegated user (one-time operation only)",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
     # Update the profile (with optional encryption only for manager profile)
     update_profile_credentials(
         args.profile_to_manage, credentials, iam_username, encrypt=should_encrypt
@@ -448,18 +608,51 @@ def main():
 
     # Apply delegation tags if --chown is specified
     if args.chown:
-        try:
-            tags_to_apply = {
-                "owner": owner_username,
-                "delegated-by": manager_username,
-            }
-            tag_user(manager_profile, iam_username, tags_to_apply)
-            print(f"✓ Applied delegation tags:")
-            print(f"  - owner: {owner_username}")
-            print(f"  - delegated-by: {manager_username}")
-        except Exception as e:
-            print(f"Error: Failed to apply delegation tags: {e}", file=sys.stderr)
-            sys.exit(1)
+        import time
+
+        max_retries = 3
+        retry_delay = 0.5  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                # Re-check tags immediately before applying to prevent race condition
+                # Between initial check and now, another process could have added tags
+                current_tags = get_user_tags(manager_profile, iam_username)
+                if "owner" in current_tags:
+                    print(
+                        f"Error: Race condition detected - user '{iam_username}' was delegated to '{current_tags['owner']}' by another process",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"This user is already delegated and cannot be re-delegated.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+
+                # Apply tags
+                tags_to_apply = {
+                    "owner": owner_username,
+                    "delegated-by": manager_username,
+                }
+                tag_user(manager_profile, iam_username, tags_to_apply)
+                print(f"✓ Applied delegation tags:")
+                print(f"  - owner: {owner_username}")
+                print(f"  - delegated-by: {manager_username}")
+                break  # Success, exit retry loop
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    # Retry after delay (might be transient AWS API issue)
+                    print(
+                        f"⚠ Tag application attempt {attempt + 1} failed, retrying...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    # Final attempt failed
+                    print(f"Error: Failed to apply delegation tags after {max_retries} attempts: {e}", file=sys.stderr)
+                    sys.exit(1)
 
     expiration = credentials["Expiration"]
     print(f"✓ Successfully updated profile '{args.profile_to_manage}'")

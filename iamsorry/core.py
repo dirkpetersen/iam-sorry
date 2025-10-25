@@ -69,8 +69,14 @@ def is_ssh_key_password_protected(ssh_key_path):
             pos = 15
 
             # Read cipher name length (4 bytes, big-endian)
+            if pos + 4 > len(key_blob):
+                return None  # Invalid format
             cipher_len = struct.unpack(">I", key_blob[pos : pos + 4])[0]
             pos += 4
+
+            # Validate cipher_len to prevent buffer overflow
+            if cipher_len > len(key_blob) - pos or cipher_len > 1024:
+                return None  # Invalid or suspiciously large cipher length
 
             # Read cipher name
             cipher_name = key_blob[pos : pos + cipher_len].decode()
@@ -112,9 +118,22 @@ def derive_encryption_key_from_ssh_key(ssh_key_path):
         encryption_key = hkdf.derive(ssh_key_data)
         return encryption_key
     except FileNotFoundError:
-        raise Exception(f"SSH key not found at {ssh_key_path}")
+        raise Exception(
+            f"SSH key not found at {ssh_key_path}\n"
+            f"  To fix: Generate an ED25519 key with: ssh-keygen -t ed25519 -f {ssh_key_path}\n"
+            f"  Or update get_ssh_key_path() to point to your existing key"
+        )
+    except PermissionError:
+        raise Exception(
+            f"Permission denied reading SSH key at {ssh_key_path}\n"
+            f"  To fix: chmod 600 {ssh_key_path}"
+        )
     except Exception as e:
-        raise Exception(f"Failed to derive encryption key from SSH key: {e}")
+        raise Exception(
+            f"Failed to derive encryption key from SSH key: {e}\n"
+            f"  SSH key path: {ssh_key_path}\n"
+            f"  Ensure the key is a valid OPENSSH format private key"
+        )
 
 
 def encrypt_credential(value, ssh_key_path):
@@ -183,7 +202,22 @@ def decrypt_credential(encrypted_value, ssh_key_path):
 
         # Remove prefix and decode from base64
         encoded_data = encrypted_value[len(ENCRYPTED_PREFIX) :]
-        encrypted_data = base64.b64decode(encoded_data)
+        try:
+            encrypted_data = base64.b64decode(encoded_data)
+        except Exception as e:
+            raise Exception(
+                f"Corrupted encrypted data (invalid base64 encoding)\n"
+                f"  The encrypted credential appears to be corrupted or manually edited.\n"
+                f"  You may need to re-encrypt with: iam-sorry --profile <profile> --encrypt"
+            )
+
+        # Validate minimum length (12 bytes nonce + at least 1 byte ciphertext + 16 bytes auth tag)
+        if len(encrypted_data) < 29:
+            raise Exception(
+                f"Invalid encrypted data: too short ({len(encrypted_data)} bytes, expected at least 29)\n"
+                f"  The encrypted credential appears to be corrupted.\n"
+                f"  You may need to re-encrypt with: iam-sorry --profile <profile> --encrypt"
+            )
 
         # Split nonce (first 12 bytes) and ciphertext
         nonce = encrypted_data[:12]
@@ -194,15 +228,24 @@ def decrypt_credential(encrypted_value, ssh_key_path):
 
         # Decrypt
         cipher = AESGCM(encryption_key)
-        plaintext = cipher.decrypt(nonce, ciphertext, None)
+        try:
+            plaintext = cipher.decrypt(nonce, ciphertext, None)
+        except Exception as e:
+            raise Exception(
+                f"Decryption failed (authentication tag mismatch or wrong key)\n"
+                f"  Possible causes:\n"
+                f"    - SSH key at {ssh_key_path} is not the same key used for encryption\n"
+                f"    - Encrypted data has been tampered with or corrupted\n"
+                f"    - SSH key passphrase was changed after encryption\n"
+                f"  To fix:\n"
+                f"    - Ensure ssh-agent has loaded the correct key: ssh-add {ssh_key_path}\n"
+                f"    - Re-encrypt with current SSH key: iam-sorry --profile <profile> --encrypt"
+            )
 
         return plaintext.decode()
     except Exception as e:
-        print(f"Error: Failed to decrypt credential: {e}", file=sys.stderr)
-        print(
-            f"Details: Make sure your SSH key is correct and ssh-agent has your passphrase.",
-            file=sys.stderr,
-        )
+        print(f"Error: Failed to decrypt credential", file=sys.stderr)
+        print(f"Details: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -246,6 +289,12 @@ def get_aws_credentials_path():
     return aws_creds
 
 
+def get_aws_config_path():
+    """Get the AWS config file path."""
+    aws_config = os.path.expanduser("~/.aws/config")
+    return aws_config
+
+
 def get_current_iam_user(profile_name):
     """
     Get the current IAM username using STS GetCallerIdentity.
@@ -257,18 +306,51 @@ def get_current_iam_user(profile_name):
         str: IAM username
 
     Raises:
-        Exception: If unable to determine current user
+        Exception: If unable to determine current user or if using non-user credentials
     """
     try:
         session = create_session_with_profile(profile_name)
         sts_client = session.client("sts")
         response = sts_client.get_caller_identity()
-        # ARN format: arn:aws:iam::ACCOUNT_ID:user/USERNAME
         arn = response["Arn"]
+
+        # Handle different ARN types
+        # IAM User: arn:aws:iam::ACCOUNT_ID:user/USERNAME
         if ":user/" in arn:
             username = arn.split(":user/")[1]
             return username
-        return None
+
+        # Assumed Role: arn:aws:sts::ACCOUNT_ID:assumed-role/ROLE_NAME/SESSION_NAME
+        if ":assumed-role/" in arn:
+            raise Exception(
+                f"Profile '{profile_name}' is using an assumed role, not an IAM user. "
+                f"iam-sorry requires IAM user credentials with permanent access keys. "
+                f"ARN: {arn}"
+            )
+
+        # Federated User: arn:aws:sts::ACCOUNT_ID:federated-user/USERNAME
+        if ":federated-user/" in arn:
+            raise Exception(
+                f"Profile '{profile_name}' is using federated credentials, not an IAM user. "
+                f"iam-sorry requires IAM user credentials with permanent access keys. "
+                f"ARN: {arn}"
+            )
+
+        # Root Account: arn:aws:iam::ACCOUNT_ID:root
+        if ":root" in arn:
+            raise Exception(
+                f"Profile '{profile_name}' is using root account credentials. "
+                f"For security, iam-sorry should only be used with IAM user credentials, not root. "
+                f"ARN: {arn}"
+            )
+
+        # Unknown ARN format
+        raise Exception(
+            f"Profile '{profile_name}' has an unrecognized ARN format. "
+            f"iam-sorry requires IAM user credentials. "
+            f"ARN: {arn}"
+        )
+
     except Exception as e:
         print(f"Error: Failed to get current IAM user", file=sys.stderr)
         print(f"Details: {e}", file=sys.stderr)
@@ -312,6 +394,13 @@ def validate_username_prefix(manager_username, target_username):
     Returns:
         tuple: (is_valid: bool, reason: str)
     """
+    # Validate usernames are not empty or whitespace-only
+    if not manager_username or not manager_username.strip():
+        return (False, "Manager username cannot be empty or whitespace-only")
+
+    if not target_username or not target_username.strip():
+        return (False, "Target username cannot be empty or whitespace-only")
+
     manager_prefix = extract_username_prefix(manager_username)
     target_prefix = extract_username_prefix(target_username)
 
@@ -363,7 +452,7 @@ def get_aws_account_id(profile_name):
         sys.exit(1)
 
 
-def generate_usermanager_policy(profile_name):
+def generate_usermanager_policy(profile_name, user_prefix=None):
     """
     Generate a least-privilege IAM policy for the current user to act as usermanager.
 
@@ -379,6 +468,7 @@ def generate_usermanager_policy(profile_name):
 
     Args:
         profile_name: AWS profile to use for lookups
+        user_prefix: Optional explicit prefix to use. If None, uses prefix from current IAM user
 
     Returns:
         dict: IAM policy document
@@ -386,8 +476,13 @@ def generate_usermanager_policy(profile_name):
     import json
 
     account_id = get_aws_account_id(profile_name)
-    current_user = get_current_iam_user(profile_name)
-    prefix = extract_username_prefix(current_user)
+
+    # If user_prefix not specified, extract from current IAM user
+    if user_prefix is None:
+        current_user = get_current_iam_user(profile_name)
+        prefix = extract_username_prefix(current_user)
+    else:
+        prefix = user_prefix
 
     # Build resource patterns: {prefix} and {prefix}-*
     # Example: if prefix is "dirk", allow "dirk" and "dirk-*"
@@ -462,6 +557,8 @@ def read_aws_credentials(creds_file, auto_decrypt=False):
         ConfigParser object with credentials
     """
     config = configparser.ConfigParser()
+    # Preserve case sensitivity for AWS credentials
+    config.optionxform = str
     if os.path.exists(creds_file):
         config.read(creds_file)
 
@@ -475,12 +572,20 @@ def read_aws_credentials(creds_file, auto_decrypt=False):
 
 
 def write_aws_credentials(creds_file, config):
-    """Write AWS credentials file."""
+    """Write AWS credentials file with secure permissions."""
     Path(creds_file).parent.mkdir(parents=True, exist_ok=True)
-    with open(creds_file, "w") as f:
-        config.write(f)
-    # Set proper permissions (readable only by owner)
-    os.chmod(creds_file, 0o600)
+
+    # Use os.open() with O_CREAT to atomically create file with secure permissions
+    # This prevents race condition where file is created with default permissions
+    # then chmod'd later (exposing credentials briefly)
+    fd = os.open(creds_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            config.write(f)
+    except:
+        # If write fails, close fd to prevent leak
+        os.close(fd)
+        raise
 
 
 def create_session_with_profile(profile_name):
@@ -821,3 +926,42 @@ def update_profile_credentials(profile_name, credentials, iam_username=None, enc
         config[profile_name]["expiration"] = credentials["Expiration"]
 
     write_aws_credentials(creds_file, config)
+
+    # Also update ~/.aws/config with region if this is a new profile
+    config_file = get_aws_config_path()
+    config_parser = configparser.ConfigParser()
+    config_parser.optionxform = str  # Preserve case sensitivity
+    if os.path.exists(config_file):
+        config_parser.read(config_file)
+
+    # Determine profile section name: "default" for default profile, "profile NAME" for others
+    profile_section = "default" if profile_name == "default" else f"profile {profile_name}"
+
+    # Only update config if profile doesn't exist yet (avoid overwriting user settings)
+    if profile_section not in config_parser:
+        config_parser[profile_section] = {}
+
+        # Get current region from iam-sorry profile in ~/.aws/config
+        region = "us-east-1"  # Default fallback
+        try:
+            config_reader = configparser.ConfigParser()
+            config_reader.read(config_file)
+            # Look for region in iam-sorry profile
+            iam_sorry_section = "profile iam-sorry"
+            if iam_sorry_section in config_reader:
+                region = config_reader[iam_sorry_section].get("region", "us-east-1")
+            elif "iam-sorry" in config_reader:
+                region = config_reader["iam-sorry"].get("region", "us-east-1")
+        except:
+            pass  # Use default if anything fails
+
+        config_parser[profile_section]["region"] = region
+
+        # Write config file with secure permissions
+        Path(config_file).parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, "w") as f:
+            config_parser.write(f)
+        os.chmod(config_file, 0o644)  # Config file can be world-readable
+
+        # Print the region that was set
+        print(f"✓ Region: {region}", file=sys.stderr)

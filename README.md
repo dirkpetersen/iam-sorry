@@ -21,23 +21,26 @@ A powerful Python CLI utility for managing temporary AWS credentials with option
 ### Basic Usage
 
 ```bash
-# 1. Store your manager profile (one-time)
+# 1. Store your management profile (one-time)
 # Edit ~/.aws/credentials with your manager IAM credentials:
-[usermanager]
+[iam-sorry]
 aws_access_key_id = AKIA...
 aws_secret_access_key = ...
+region = us-west-2
 
-# 2. Encrypt the manager profile (one-time)
-iam-sorry --profile usermanager --encrypt
-# ✓ Manager profile 'usermanager' encrypted with SSH key
+# 2. Encrypt the iam-sorry profile (one-time, optional)
+iam-sorry --encrypt
+# ✓ Manager profile 'iam-sorry' encrypted with SSH key
 
-# 3. Generate temporary credentials
-iam-sorry --profile usermanager admin
-# ✓ Successfully updated profile 'admin'
+# 3. Create and generate temporary credentials for users in your namespace
+iam-sorry iam-admin
+# ✓ IAM user 'iam-admin' created
+# ✓ Region: us-west-2
+# ✓ Successfully updated profile 'iam-admin'
 # ✓ Credentials expire at: 2025-10-26T12:00:00
 
-# 4. Run batch operations
-eval $(iam-sorry --eval usermanager)
+# 4. Run batch operations with encrypted manager credentials
+eval $(iam-sorry --eval iam-sorry)
 
 for user in user1 user2 user3; do
   aws iam create-user --user-name $user
@@ -46,6 +49,14 @@ done
 # 5. Cleanup
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
+
+**Key Behavior:**
+- Management profile defaults to `iam-sorry` (override with `--profile` or `AWS_PROFILE`)
+- Users in your namespace (e.g., `iam-*` for manager `iam-admin`) are auto-created
+- `~/.aws/config` is auto-populated with region from iam-sorry profile
+- **CRITICAL**: The management profile is NEVER refreshed (permanent credentials must not be replaced)
+- **CRITICAL**: The iam-sorry profile credentials MUST be encrypted (`iam-sorry --encrypt`)
+- To use AWS, always generate a temporary profile: `./iam-sorry iam-bedrock`
 
 ## Vision & Architecture
 
@@ -335,24 +346,44 @@ AWS_PROFILE=usermanager iam-sorry
 ### Manager Commands (Prefix-Based Access Control)
 
 ```bash
-# Generate temporary credentials for user in your namespace
-iam-sorry --profile iam-sorry dirk-bedrock
+# Create and manage users in your namespace (auto-created if doesn't exist)
+iam-sorry iam-bedrock           # Creates iam-bedrock, generates credentials
+iam-sorry iam-analytics         # Creates iam-analytics, generates credentials
 
-# Generate temporary credentials for users with matching prefix
-iam-sorry --profile iam-sorry dirk-analytics
+# The IAM user is created automatically if it doesn't exist
+# Your namespace is based on your manager username prefix:
+# - Manager 'iam-dirk' can create 'iam-bedrock', 'iam-analytics', etc.
+# - Manager 'alice' can create 'alice-bedrock', 'alice-analytics', etc.
 
-# Create user outside namespace and delegate to them (one-time only!)
-iam-sorry --profile iam-sorry jimmy-bedrock --chown jimmy
+# Delegate user outside namespace to another owner (one-time only!)
+iam-sorry jimmy-bedrock --chown jimmy    # Creates jimmy-bedrock, delegates to jimmy
 ```
 
 ### Print Policy
 
 ```bash
-# Show the recommended IAM policy for your user
+# Show the recommended IAM policy using current Unix username as prefix
 iam-sorry --print-policy
 
-# Account ID and username are personalized to your environment
+# Show the recommended IAM policy for a specific prefix
+iam-sorry --print-policy iam
+iam-sorry --print-policy alice
+
+# Policy is personalized with your account ID and the specified namespace prefix
+# Output includes:
+# 1. JSON policy document
+# 2. Step-by-step instructions for AWS administrator
+# 3. How to attach the policy to a new IAM user via AWS Console
 ```
+
+**Next Steps**:
+1. Copy the JSON policy
+2. Send to your AWS administrator
+3. Administrator creates a new IAM user (e.g., `dp-mgr`)
+4. Administrator adds the policy as an inline policy via AWS Console
+5. Receive Access Key ID and Secret Access Key
+6. Configure credentials: `aws configure --profile iam-sorry`
+7. Start using iam-sorry to manage your namespace users
 
 ## Manager Guide: User Delegation with --chown
 
@@ -479,7 +510,7 @@ AWS SDK access
 
 ### Username Prefix-Based Access Control
 
-`iam-sorry` enforces username prefix matching to prevent unauthorized user management. The manager can only create/manage users whose names start with the manager's prefix.
+`iam-sorry` enforces username prefix matching to prevent unauthorized user management. Managers can only create and manage users whose names match their namespace prefix. **Users within your namespace are automatically created if they don't exist.**
 
 **How It Works**:
 
@@ -488,7 +519,13 @@ AWS SDK access
    - `alice-manager` → prefix is `alice`
    - `bob` (no hyphen) → prefix is `bob`
 
-2. **Enforce Matching**: Manager can only manage users that:
+2. **Auto-Create Matching Users**: When you request credentials for a user:
+   - Prefix is validated locally (fast)
+   - If IAM user doesn't exist, it's created automatically
+   - Temporary credentials are generated for the new user
+   - `~/.aws/config` is populated with the region
+
+3. **Allowed Operations**: Manager can only manage users that:
    - Start with `{prefix}-` (e.g., `dirk-admin` can manage `dirk-bedrock`, `dirk-analytics`)
    - OR are exactly the prefix (e.g., `dirk-admin` can manage `dirk`)
    - BUT not themselves (e.g., `dirk` cannot create `dirk`)
