@@ -56,22 +56,13 @@ def main():
         help="Encrypt the manager profile permanent credentials (only for --profile argument, not generated temp credentials)",
     )
     parser.add_argument(
-        "--show-encrypted",
-        metavar="PROFILE",
-        help="Show encrypted credentials for a profile (for debugging)",
-    )
-    parser.add_argument(
-        "--show-decrypted",
-        metavar="PROFILE",
-        help="Show decrypted credentials for a profile",
-    )
-    parser.add_argument(
         "--eval",
         metavar="PROFILE",
         nargs="?",
         const="",  # Empty string when --eval is used without argument
         default=None,  # None when --eval is not used at all
-        help="Output shell export statements for a profile's credentials (for eval in shell scripts). If no profile specified, uses 'default' profile.",
+        help="Output shell export statements for a profile's credentials (for eval in shell scripts). "
+        "To view decrypted credentials, use: iam-sorry --eval iam-sorry",
     )
     parser.add_argument(
         "--print-policy",
@@ -116,37 +107,6 @@ def main():
             print(f"Error: Failed to generate policy: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Handle --show-encrypted flag for debugging
-    if args.show_encrypted:
-        creds_file = get_aws_credentials_path()
-        config = read_aws_credentials(creds_file, auto_decrypt=False)
-        if args.show_encrypted not in config:
-            print(f"Error: Profile '{args.show_encrypted}' not found", file=sys.stderr)
-            sys.exit(1)
-
-        profile = config[args.show_encrypted]
-        print(f"Profile: {args.show_encrypted}")
-        print(f"Access Key ID: {profile.get('aws_access_key_id', 'N/A')}")
-        print(f"Secret Access Key: {profile.get('aws_secret_access_key', 'N/A')}")
-        print(f"Session Token: {profile.get('aws_session_token', 'N/A')}")
-        sys.exit(0)
-
-    # Handle --show-decrypted flag
-    if args.show_decrypted:
-        creds_file = get_aws_credentials_path()
-        config = read_aws_credentials(creds_file, auto_decrypt=True)
-        if args.show_decrypted not in config:
-            print(f"Error: Profile '{args.show_decrypted}' not found", file=sys.stderr)
-            sys.exit(1)
-
-        profile = config[args.show_decrypted]
-        print(f"Profile: {args.show_decrypted}")
-        print(f"Access Key ID: {profile.get('aws_access_key_id', 'N/A')}")
-        print(f"Secret Access Key: {profile.get('aws_secret_access_key', 'N/A')}")
-        print(f"Session Token: {profile.get('aws_session_token', 'N/A')}")
-        if "credentials_owner" in profile:
-            print(f"Credentials Owner: {profile.get('credentials_owner')}")
-        sys.exit(0)
 
     # Handle --eval flag to output shell export statements
     if args.eval is not None:
