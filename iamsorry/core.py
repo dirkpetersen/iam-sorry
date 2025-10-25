@@ -275,6 +275,70 @@ def get_current_iam_user(profile_name):
         sys.exit(1)
 
 
+def extract_username_prefix(username):
+    """
+    Extract the prefix from a username (everything before the first hyphen).
+
+    Examples:
+        dirk-admin → dirk
+        alice-manager → alice
+        bob → bob
+        dirk-team-admin → dirk
+
+    Args:
+        username: IAM username
+
+    Returns:
+        str: Username prefix
+    """
+    if "-" in username:
+        return username.split("-")[0]
+    return username
+
+
+def validate_username_prefix(manager_username, target_username):
+    """
+    Validate that the target username matches the manager's prefix.
+
+    Manager can only create/manage users that:
+    - Start with {prefix}- (e.g., dirk-admin can manage dirk-bedrock)
+    - OR are exactly the prefix (e.g., dirk-admin can manage dirk)
+    - BUT not themselves if they are exactly the prefix (dirk cannot create dirk)
+
+    Args:
+        manager_username: Username of the manager (e.g., dirk-admin)
+        target_username: Username to be created/managed (e.g., dirk-bedrock)
+
+    Returns:
+        tuple: (is_valid: bool, reason: str)
+    """
+    manager_prefix = extract_username_prefix(manager_username)
+    target_prefix = extract_username_prefix(target_username)
+
+    # Check if target username starts with manager's prefix
+    if target_username == manager_prefix:
+        # Allow managing user with exact prefix name (e.g., dirk-admin can manage dirk)
+        # But prevent manager from creating themselves
+        if manager_username == target_username:
+            return (
+                False,
+                f"Cannot manage your own user account '{manager_username}'",
+            )
+        return (True, "Managing user with exact prefix")
+
+    # Check if target starts with prefix followed by hyphen
+    if target_username.startswith(f"{manager_prefix}-"):
+        return (True, f"Target username starts with required prefix '{manager_prefix}-'")
+
+    # Validation failed
+    return (
+        False,
+        f"Username '{target_username}' does not match required prefix. "
+        f"Manager '{manager_username}' (prefix: '{manager_prefix}') can only manage users "
+        f"named '{manager_prefix}' or '{manager_prefix}-*'",
+    )
+
+
 def get_aws_account_id(profile_name):
     """
     Get the AWS account ID using STS GetCallerIdentity.
@@ -303,6 +367,11 @@ def generate_usermanager_policy(profile_name):
     """
     Generate a least-privilege IAM policy for the current user to act as usermanager.
 
+    This policy enforces username prefix matching:
+    - Manager "dirk-admin" can only manage users starting with "dirk-" or exactly "dirk"
+    - Manager "alice" can only manage users starting with "alice-"
+    - Prefix is everything before the first hyphen (or entire username if no hyphen)
+
     Args:
         profile_name: AWS profile to use for lookups
 
@@ -313,6 +382,14 @@ def generate_usermanager_policy(profile_name):
 
     account_id = get_aws_account_id(profile_name)
     current_user = get_current_iam_user(profile_name)
+    prefix = extract_username_prefix(current_user)
+
+    # Build resource patterns: {prefix} and {prefix}-*
+    # Example: if prefix is "dirk", allow "dirk" and "dirk-*"
+    user_resources = [
+        f"arn:aws:iam::{account_id}:user/{prefix}",
+        f"arn:aws:iam::{account_id}:user/{prefix}-*",
+    ]
 
     policy = {
         "Version": "2012-10-17",
@@ -321,7 +398,7 @@ def generate_usermanager_policy(profile_name):
                 "Sid": "CreateUsers",
                 "Effect": "Allow",
                 "Action": ["iam:CreateUser", "iam:AddUserToGroup", "iam:RemoveUserFromGroup"],
-                "Resource": f"arn:aws:iam::{account_id}:user/*",
+                "Resource": user_resources,
             },
             {
                 "Sid": "ManageUserCredentials",
@@ -333,7 +410,7 @@ def generate_usermanager_policy(profile_name):
                     "iam:ListAccessKeys",
                     "iam:GetAccessKeyLastUsed",
                 ],
-                "Resource": f"arn:aws:iam::{account_id}:user/*",
+                "Resource": user_resources,
             },
             {
                 "Sid": "ListUsersForLookup",

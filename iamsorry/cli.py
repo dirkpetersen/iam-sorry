@@ -19,6 +19,7 @@ from .core import (
     get_temp_credentials_for_user,
     read_aws_credentials,
     update_profile_credentials,
+    validate_username_prefix,
     verify_iam_user_exists,
     write_aws_credentials,
 )
@@ -391,6 +392,15 @@ def main():
             sys.exit(1)
 
         print(f"IAM user verified: {iam_username}")
+
+    # Validate username prefix (manager can only manage users with matching prefix)
+    # Get the manager's username first
+    manager_username = get_current_iam_user(manager_profile)
+    is_valid, reason = validate_username_prefix(manager_username, iam_username)
+
+    if not is_valid:
+        print(f"Error: {reason}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Requesting temporary credentials (valid for {args.duration} hours)...")
 

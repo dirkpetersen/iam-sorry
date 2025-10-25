@@ -376,6 +376,76 @@ AWS SDK access
 - ✅ **Lazy decryption**: Only decrypt when needed
 - ✅ **Auto-cleanup**: Session tokens auto-expire (max 36 hours)
 
+### Username Prefix-Based Access Control
+
+`iam-sorry` enforces username prefix matching to prevent unauthorized user management. The manager can only create/manage users whose names start with the manager's prefix.
+
+**How It Works**:
+
+1. **Extract Prefix**: Everything before the first hyphen in the manager's username
+   - `dirk-admin` → prefix is `dirk`
+   - `alice-manager` → prefix is `alice`
+   - `bob` (no hyphen) → prefix is `bob`
+
+2. **Enforce Matching**: Manager can only manage users that:
+   - Start with `{prefix}-` (e.g., `dirk-admin` can manage `dirk-bedrock`, `dirk-analytics`)
+   - OR are exactly the prefix (e.g., `dirk-admin` can manage `dirk`)
+   - BUT not themselves (e.g., `dirk` cannot create `dirk`)
+
+**Examples**:
+
+```bash
+# Manager: dirk-admin (prefix: dirk)
+iam-sorry --profile iam-sorry dirk-bedrock    # ✓ Allowed
+iam-sorry --profile iam-sorry dirk-analytics  # ✓ Allowed
+iam-sorry --profile iam-sorry dirk            # ✓ Allowed
+iam-sorry --profile iam-sorry alice           # ✗ Denied (wrong prefix)
+iam-sorry --profile iam-sorry bob-service     # ✗ Denied (wrong prefix)
+
+# Manager: alice (prefix: alice)
+iam-sorry --profile iam-sorry alice-ml        # ✓ Allowed
+iam-sorry --profile iam-sorry alice-data      # ✓ Allowed
+iam-sorry --profile iam-sorry alice           # ✗ Denied (cannot create self)
+```
+
+**IAM Policy Enforcement**:
+
+The generated IAM policy automatically restricts resource access:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateUsers",
+      "Effect": "Allow",
+      "Action": ["iam:CreateUser", "iam:CreateAccessKey", "..."],
+      "Resource": [
+        "arn:aws:iam::123456789012:user/dirk",
+        "arn:aws:iam::123456789012:user/dirk-*"
+      ]
+    }
+  ]
+}
+```
+
+**CLI Validation**:
+
+The tool validates prefix matching before attempting AWS API calls:
+
+```bash
+$ iam-sorry --profile iam-sorry alice
+Error: Username 'alice' does not match required prefix.
+Manager 'dirk-admin' (prefix: 'dirk') can only manage users named 'dirk' or 'dirk-*'
+```
+
+**Security Benefits**:
+
+- ✅ Prevents manager from creating/managing users outside their namespace
+- ✅ Enforced at both IAM policy level (AWS) and CLI level (client-side)
+- ✅ Clear ownership: `dirk-admin` owns all `dirk-*` users
+- ✅ Simplifies auditing: track which manager created which users
+
 ## Configuration
 
 ### SSH Key Requirements

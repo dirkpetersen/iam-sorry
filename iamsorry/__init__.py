@@ -22,6 +22,7 @@ from .core import (
     credentials_need_refresh,
     decrypt_credential,
     encrypt_credential,
+    extract_username_prefix,
     generate_usermanager_policy,
     get_aws_account_id,
     get_aws_credentials_path,
@@ -31,6 +32,7 @@ from .core import (
     is_ssh_key_password_protected,
     read_aws_credentials,
     update_profile_credentials,
+    validate_username_prefix,
     verify_iam_user_exists,
     write_aws_credentials,
 )
@@ -39,6 +41,7 @@ __all__ = [
     "is_ssh_key_password_protected",
     "encrypt_credential",
     "decrypt_credential",
+    "extract_username_prefix",
     "get_aws_credentials_path",
     "read_aws_credentials",
     "write_aws_credentials",
@@ -49,5 +52,6 @@ __all__ = [
     "get_current_iam_user",
     "get_aws_account_id",
     "generate_usermanager_policy",
+    "validate_username_prefix",
     "credentials_need_refresh",
 ]

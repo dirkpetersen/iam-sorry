@@ -76,8 +76,61 @@ Generated Profile (admin, dev, etc)
 - `read_aws_credentials()` - Reads credentials with optional auto-decryption
 - `write_aws_credentials()` - Writes credentials with proper permissions
 
+**Username Prefix Validation**:
+- `extract_username_prefix()` - Extracts prefix from username (everything before first hyphen)
+- `validate_username_prefix()` - Validates that target username matches manager's prefix
+- `generate_usermanager_policy()` - Generates IAM policy with prefix-based resource restrictions
+
 **CLI**:
 - `main()` - Orchestrates workflow with argument parsing
+
+### Username Prefix-Based Access Control
+
+The tool enforces username prefix matching to prevent unauthorized user management. This provides namespace isolation between different managers.
+
+**How It Works**:
+
+1. **Prefix Extraction**: Extract everything before the first hyphen
+   - `dirk-admin` → prefix is `dirk`
+   - `alice-manager` → prefix is `alice`
+   - `bob` → prefix is `bob`
+
+2. **Validation Rules**:
+   - Manager can create/manage users starting with `{prefix}-`
+   - Manager can create/manage user with exact prefix name (but not themselves)
+   - All other usernames are rejected
+
+3. **Enforcement Layers**:
+   - **CLI Validation**: Client-side check before AWS API calls (immediate feedback)
+   - **IAM Policy**: Server-side enforcement at AWS level (security boundary)
+
+**Examples**:
+
+```python
+# Manager: dirk-admin (prefix: dirk)
+validate_username_prefix("dirk-admin", "dirk-bedrock")  # ✓ Valid
+validate_username_prefix("dirk-admin", "dirk")          # ✓ Valid
+validate_username_prefix("dirk-admin", "alice")         # ✗ Invalid
+
+# Manager: dirk (prefix: dirk)
+validate_username_prefix("dirk", "dirk-bedrock")        # ✓ Valid
+validate_username_prefix("dirk", "dirk")                # ✗ Invalid (self)
+```
+
+**IAM Policy Generation**:
+
+The `generate_usermanager_policy()` function automatically creates resource restrictions:
+
+```json
+{
+  "Resource": [
+    "arn:aws:iam::123456789012:user/dirk",
+    "arn:aws:iam::123456789012:user/dirk-*"
+  ]
+}
+```
+
+This ensures AWS enforces the prefix restriction even if the CLI validation is bypassed.
 
 ## Command Reference
 
