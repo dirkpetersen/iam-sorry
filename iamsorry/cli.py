@@ -253,9 +253,9 @@ def main():
     # Default to iam-sorry if not specified
     manager_profile = args.profile or os.environ.get("AWS_PROFILE") or "iam-sorry"
 
-    # Verify the profile exists
+    # Verify the profile exists and decrypt if needed
     creds_file = get_aws_credentials_path()
-    temp_config = read_aws_credentials(creds_file, auto_decrypt=False)
+    temp_config = read_aws_credentials(creds_file, auto_decrypt=True)
     if manager_profile not in temp_config:
         print(
             f"Error: Profile '{manager_profile}' does not exist in credentials file",

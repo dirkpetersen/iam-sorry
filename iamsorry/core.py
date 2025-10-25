@@ -260,7 +260,7 @@ def get_current_iam_user(profile_name):
         Exception: If unable to determine current user
     """
     try:
-        session = boto3.Session(profile_name=profile_name)
+        session = create_session_with_profile(profile_name)
         sts_client = session.client("sts")
         response = sts_client.get_caller_identity()
         # ARN format: arn:aws:iam::ACCOUNT_ID:user/USERNAME
@@ -289,7 +289,7 @@ def get_aws_account_id(profile_name):
         Exception: If unable to determine account ID
     """
     try:
-        session = boto3.Session(profile_name=profile_name)
+        session = create_session_with_profile(profile_name)
         sts_client = session.client("sts")
         response = sts_client.get_caller_identity()
         return response["Account"]
@@ -386,6 +386,41 @@ def write_aws_credentials(creds_file, config):
     os.chmod(creds_file, 0o600)
 
 
+def create_session_with_profile(profile_name):
+    """
+    Create a boto3 session with credentials from a profile, auto-decrypting if needed.
+
+    Args:
+        profile_name: AWS profile name
+
+    Returns:
+        boto3.Session configured with the profile's credentials
+
+    Raises:
+        Exception: If profile not found or credentials invalid
+    """
+    creds_file = get_aws_credentials_path()
+    config = read_aws_credentials(creds_file, auto_decrypt=True)
+
+    if profile_name not in config:
+        raise Exception(f"Profile '{profile_name}' not found")
+
+    profile = config[profile_name]
+    access_key = profile.get("aws_access_key_id")
+    secret_key = profile.get("aws_secret_access_key")
+    session_token = profile.get("aws_session_token")
+
+    if not access_key or not secret_key:
+        raise Exception(f"Profile '{profile_name}' missing credentials")
+
+    # Create session with explicit credentials (bypasses AWS credentials file)
+    return boto3.Session(
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        aws_session_token=session_token if session_token else None,
+    )
+
+
 def get_iam_user_for_access_key(profile_name, access_key_id):
     """
     Get the IAM username associated with an access key.
@@ -398,7 +433,7 @@ def get_iam_user_for_access_key(profile_name, access_key_id):
         IAM username or None if not found
     """
     try:
-        session = boto3.Session(profile_name=profile_name)
+        session = create_session_with_profile(profile_name)
         iam_client = session.client("iam")
 
         # List all IAM users and find the one with this access key
@@ -449,7 +484,7 @@ def verify_iam_user_exists(profile_name, username):
         True if user exists, False otherwise
     """
     try:
-        session = boto3.Session(profile_name=profile_name)
+        session = create_session_with_profile(profile_name)
         iam_client = session.client("iam")
         iam_client.get_user(UserName=username)
         return True
@@ -486,7 +521,7 @@ def get_temp_credentials_for_user(manager_profile, username, duration_seconds=43
         dict with AccessKeyId, SecretAccessKey, SessionToken, Expiration
     """
     try:
-        session = boto3.Session(profile_name=manager_profile)
+        session = create_session_with_profile(manager_profile)
         sts_client = session.client("sts")
 
         # Use GetSessionToken to get temporary credentials
