@@ -446,6 +446,37 @@ Manager 'dirk-admin' (prefix: 'dirk') can only manage users named 'dirk' or 'dir
 - ✅ Clear ownership: `dirk-admin` owns all `dirk-*` users
 - ✅ Simplifies auditing: track which manager created which users
 
+### Tagging Strategy for Permanent Restrictions
+
+The IAM policy includes a one-time tagging approach to enforce permanent restrictions:
+
+**How It Works**:
+
+1. **Manager can ADD tags** (one-time setup):
+   ```bash
+   aws iam tag-user --user-name dirk-bedrock \
+     --tags Key=manager-locked,Value=true Key=managed-by,Value=dirk-admin
+   ```
+
+2. **Manager CANNOT remove tags** (permanent lock):
+   ```bash
+   # This will be DENIED by the IAM policy
+   aws iam untag-user --user-name dirk-bedrock --tag-keys manager-locked
+   # Error: UnauthorizedOperation - UntagUser is denied for users in your namespace
+   ```
+
+**IAM Policy Statements**:
+
+- ✅ `AddRestrictionTags`: Allows `iam:TagUser` on namespace users
+- ❌ `PreventTagRemoval`: Denies `iam:UntagUser` on namespace users
+
+**Use Case**:
+
+- Manager sets up restriction tags when creating user
+- Tags remain permanent (manager cannot remove them)
+- Provides tamper-proof audit trail
+- Prevents accidental or malicious tag removal
+
 ## Configuration
 
 ### SSH Key Requirements
