@@ -19,6 +19,7 @@ __email__ = "dirk.petersen@protonmail.com"
 __license__ = "MIT"
 
 from .core import (
+    credentials_need_refresh,
     decrypt_credential,
     encrypt_credential,
     generate_usermanager_policy,
@@ -48,4 +49,5 @@ __all__ = [
     "get_current_iam_user",
     "get_aws_account_id",
     "generate_usermanager_policy",
+    "credentials_need_refresh",
 ]

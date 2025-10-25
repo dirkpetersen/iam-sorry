@@ -8,6 +8,7 @@ import os
 import sys
 
 from .core import (
+    credentials_need_refresh,
     encrypt_credential,
     generate_usermanager_policy,
     get_aws_account_id,
@@ -171,6 +172,56 @@ def main():
             sys.exit(1)
 
         profile = config[eval_profile]
+
+        # Check if credentials need refresh (expired or expiring soon)
+        needs_refresh, reason = credentials_need_refresh(profile)
+        if needs_refresh:
+            print(f"⚠ Credentials expired, refreshing...", file=sys.stderr)
+
+            # Get the IAM username to refresh credentials for
+            iam_username = profile.get("credentials_owner")
+            if not iam_username:
+                print(
+                    f"Error: Cannot auto-refresh profile '{eval_profile}' - no credentials_owner field",
+                    file=sys.stderr,
+                )
+                print(
+                    "The profile was not created by iam-sorry. Please recreate it.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            # Use iam-sorry profile to refresh credentials
+            manager_profile = "iam-sorry"
+            manager_config = read_aws_credentials(creds_file, auto_decrypt=True)
+            if manager_profile not in manager_config:
+                print(
+                    f"Error: Cannot auto-refresh - '{manager_profile}' profile not found",
+                    file=sys.stderr,
+                )
+                print(
+                    f"The '{manager_profile}' profile is required to refresh credentials.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            # Generate new temporary credentials (default 36 hours)
+            try:
+                duration_seconds = 36 * 3600
+                new_credentials = get_temp_credentials_for_user(
+                    manager_profile, iam_username, duration_seconds
+                )
+                update_profile_credentials(eval_profile, new_credentials, iam_username)
+
+                # Re-read the updated profile
+                config = read_aws_credentials(creds_file, auto_decrypt=True)
+                profile = config[eval_profile]
+
+                print(f"✓ Credentials refreshed successfully", file=sys.stderr)
+            except Exception as e:
+                print(f"Error: Failed to refresh credentials: {e}", file=sys.stderr)
+                sys.exit(1)
+
         access_key = profile.get("aws_access_key_id")
         secret_key = profile.get("aws_secret_access_key")
         session_token = profile.get("aws_session_token")

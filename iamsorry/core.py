@@ -485,6 +485,58 @@ def get_temp_credentials_for_user(manager_profile, username, duration_seconds=43
         sys.exit(1)
 
 
+def credentials_need_refresh(profile, threshold_minutes=5):
+    """
+    Check if credentials need to be refreshed.
+
+    Args:
+        profile: ConfigParser section with credentials
+        threshold_minutes: Refresh if expiring within this many minutes (default: 5)
+
+    Returns:
+        tuple: (needs_refresh: bool, reason: str)
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Permanent credentials don't need refresh
+    if "aws_session_token" not in profile or not profile["aws_session_token"]:
+        return False, "permanent credentials"
+
+    # Check if we have expiration timestamp
+    if "expiration" not in profile:
+        return False, "no expiration timestamp"
+
+    try:
+        # Parse expiration timestamp (ISO format)
+        expiration_str = profile["expiration"]
+        # Handle both with and without timezone
+        if expiration_str.endswith("Z"):
+            expiration = datetime.fromisoformat(expiration_str.replace("Z", "+00:00"))
+        elif "+" in expiration_str or expiration_str.count("-") > 2:
+            expiration = datetime.fromisoformat(expiration_str)
+        else:
+            # No timezone info, assume UTC
+            expiration = datetime.fromisoformat(expiration_str).replace(tzinfo=timezone.utc)
+
+        # Get current time in UTC
+        now = datetime.now(timezone.utc)
+
+        # Check if expired or expiring soon
+        time_remaining = expiration - now
+
+        if time_remaining.total_seconds() < 0:
+            return True, "credentials expired"
+        elif time_remaining.total_seconds() < (threshold_minutes * 60):
+            minutes_left = int(time_remaining.total_seconds() / 60)
+            return True, f"credentials expiring in {minutes_left} minutes"
+        else:
+            return False, "credentials still valid"
+
+    except Exception as e:
+        # If we can't parse expiration, don't refresh
+        return False, f"could not parse expiration: {e}"
+
+
 def update_profile_credentials(profile_name, credentials, iam_username=None, encrypt=False):
     """
     Update a profile in the AWS credentials file with new temporary credentials.
@@ -520,5 +572,9 @@ def update_profile_credentials(profile_name, credentials, iam_username=None, enc
     # Store the IAM username so we can identify it later even with temporary credentials
     if iam_username:
         config[profile_name]["credentials_owner"] = iam_username
+
+    # Store expiration timestamp if available (for auto-refresh)
+    if "Expiration" in credentials:
+        config[profile_name]["expiration"] = credentials["Expiration"]
 
     write_aws_credentials(creds_file, config)
