@@ -171,34 +171,27 @@ def main():
         sys.exit(0)
 
     # Determine which profile to use for managing credentials
-    manager_profile = args.profile or os.environ.get("AWS_PROFILE")
+    # Default to iam-sorry if not specified
+    manager_profile = args.profile or os.environ.get("AWS_PROFILE") or "iam-sorry"
 
-    if not manager_profile:
+    # Verify the profile exists
+    creds_file = get_aws_credentials_path()
+    temp_config = read_aws_credentials(creds_file, auto_decrypt=False)
+    if manager_profile not in temp_config:
         print(
-            "Error: No manager profile specified. Use --profile or set AWS_PROFILE environment variable",
+            f"Error: Profile '{manager_profile}' does not exist in credentials file",
             file=sys.stderr,
         )
+        if manager_profile == "iam-sorry":
+            print(
+                f"The default 'iam-sorry' profile is missing. Please specify a different profile with --profile or AWS_PROFILE",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
     # Handle --encrypt flag to encrypt the manager profile itself
     if args.encrypt and args.profile_to_manage is None:
-        # Prevent encrypting the default profile - it must be explicitly named
-        if manager_profile == "default":
-            print(
-                "Error: Cannot encrypt 'default' profile. Use --profile or AWS_PROFILE to specify an explicit profile name.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        creds_file = get_aws_credentials_path()
         config = read_aws_credentials(creds_file, auto_decrypt=True)
-
-        if manager_profile not in config:
-            print(
-                f"Error: Manager profile '{manager_profile}' not found in credentials file",
-                file=sys.stderr,
-            )
-            sys.exit(1)
 
         print(f"Encrypting manager profile '{manager_profile}'...")
 
