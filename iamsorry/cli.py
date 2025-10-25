@@ -65,8 +65,9 @@ def main():
         "--eval",
         metavar="PROFILE",
         nargs="?",
-        const=None,
-        help="Output shell export statements for a profile's credentials (for eval in shell scripts). If no profile specified, uses --profile value.",
+        const="",  # Empty string when --eval is used without argument
+        default=None,  # None when --eval is not used at all
+        help="Output shell export statements for a profile's credentials (for eval in shell scripts). If no profile specified, uses 'default' profile.",
     )
     parser.add_argument(
         "--print-policy",
@@ -138,11 +139,14 @@ def main():
 
     # Handle --eval flag to output shell export statements
     if args.eval is not None:
-        # If --eval has no argument, default to 'default' profile (not iam-sorry)
+        # If --eval has no argument (empty string), default to 'default' profile (not iam-sorry)
         # The iam-sorry profile is only for management operations, not for eval
-        eval_profile = (
-            args.eval if args.eval else args.profile or os.environ.get("AWS_PROFILE") or "default"
-        )
+        if args.eval == "":
+            # --eval was specified without an argument
+            eval_profile = args.profile or os.environ.get("AWS_PROFILE") or "default"
+        else:
+            # --eval was specified with an explicit profile name
+            eval_profile = args.eval
 
         creds_file = get_aws_credentials_path()
         config = read_aws_credentials(creds_file, auto_decrypt=True)
