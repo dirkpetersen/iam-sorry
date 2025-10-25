@@ -605,6 +605,31 @@ def verify_iam_user_exists(profile_name, username):
         sys.exit(1)
 
 
+def create_iam_user(profile_name, username):
+    """
+    Create a new IAM user.
+
+    Args:
+        profile_name: AWS profile to use
+        username: IAM username to create
+
+    Returns:
+        dict: User information
+
+    Raises:
+        Exception: If user creation fails
+    """
+    try:
+        session = create_session_with_profile(profile_name)
+        iam_client = session.client("iam")
+        response = iam_client.create_user(UserName=username)
+        return response["User"]
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "EntityAlreadyExists":
+            return None  # User already exists
+        raise Exception(f"Failed to create IAM user '{username}': {e}")
+
+
 def get_user_tags(profile_name, username):
     """
     Get tags for an IAM user.

@@ -9,6 +9,7 @@ import sys
 
 from .core import (
     credentials_need_refresh,
+    create_iam_user,
     encrypt_credential,
     generate_usermanager_policy,
     get_aws_account_id,
@@ -352,15 +353,27 @@ def main():
         iam_username = args.profile_to_manage
         print(f"Profile doesn't exist, treating '{iam_username}' as IAM username...")
 
-        # Verify the user exists
-        if not verify_iam_user_exists(manager_profile, iam_username):
-            print(
-                f"Error: IAM user '{iam_username}' does not exist",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        # Check if user exists
+        user_exists = verify_iam_user_exists(manager_profile, iam_username)
 
-        print(f"IAM user verified: {iam_username}")
+        if not user_exists:
+            # If --chown is specified, create the user
+            if args.chown:
+                print(f"Creating IAM user '{iam_username}'...")
+                try:
+                    create_iam_user(manager_profile, iam_username)
+                    print(f"✓ IAM user '{iam_username}' created")
+                except Exception as e:
+                    print(f"Error: Failed to create IAM user '{iam_username}': {e}", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print(
+                    f"Error: IAM user '{iam_username}' does not exist",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        else:
+            print(f"IAM user verified: {iam_username}")
 
     # Validate username prefix (manager can only manage users with matching prefix)
     # UNLESS --chown is specified (one-time delegation)

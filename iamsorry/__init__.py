@@ -20,6 +20,7 @@ __license__ = "MIT"
 
 from .core import (
     credentials_need_refresh,
+    create_iam_user,
     decrypt_credential,
     encrypt_credential,
     extract_username_prefix,
@@ -47,6 +48,7 @@ __all__ = [
     "get_aws_credentials_path",
     "read_aws_credentials",
     "write_aws_credentials",
+    "create_iam_user",
     "get_iam_user_for_access_key",
     "verify_iam_user_exists",
     "get_temp_credentials_for_user",
