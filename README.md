@@ -460,9 +460,10 @@ dirk-admin$ ./iam-sorry --profile iam-sorry jimmy-bedrock
 
 ### Requirements for Delegation
 
-1. **Manager must have permission** to create users outside their namespace
-2. **User must not have `owner` tag** (prevents re-delegation)
-3. **Only valid when delegating to a username** (must be valid AWS IAM user eventually)
+1. **Delegated owner must exist as IAM user** (verified by CLI before delegation)
+2. **Delegated user must match owner's prefix** (e.g., cj-moin for owner cj)
+3. **User must not have `owner` tag** (prevents re-delegation)
+4. **Manager must have CreateUsersDelegation permission** (in generated IAM policy)
 
 ## Security Architecture
 
