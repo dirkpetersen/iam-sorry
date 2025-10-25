@@ -605,6 +605,53 @@ def verify_iam_user_exists(profile_name, username):
         sys.exit(1)
 
 
+def get_user_tags(profile_name, username):
+    """
+    Get tags for an IAM user.
+
+    Args:
+        profile_name: AWS profile to use
+        username: IAM username
+
+    Returns:
+        dict: Tags as key-value pairs, or empty dict if no tags
+    """
+    try:
+        session = create_session_with_profile(profile_name)
+        iam_client = session.client("iam")
+        response = iam_client.list_user_tags(UserName=username)
+        tags = {}
+        for tag in response.get("Tags", []):
+            tags[tag["Key"]] = tag["Value"]
+        return tags
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchEntity":
+            return {}
+        raise
+
+
+def tag_user(profile_name, username, tags_dict):
+    """
+    Add tags to an IAM user.
+
+    Args:
+        profile_name: AWS profile to use
+        username: IAM username
+        tags_dict: Dictionary of tags to apply {key: value}
+
+    Raises:
+        Exception: If tagging fails
+    """
+    try:
+        session = create_session_with_profile(profile_name)
+        iam_client = session.client("iam")
+
+        tags_list = [{"Key": k, "Value": v} for k, v in tags_dict.items()]
+        iam_client.tag_user(UserName=username, Tags=tags_list)
+    except ClientError as e:
+        raise Exception(f"Failed to tag user '{username}': {e}")
+
+
 def get_temp_credentials_for_user(manager_profile, username, duration_seconds=43200):
     """
     Get temporary credentials for an IAM user using GetSessionToken.

@@ -17,7 +17,9 @@ from .core import (
     get_iam_user_for_access_key,
     get_ssh_key_path,
     get_temp_credentials_for_user,
+    get_user_tags,
     read_aws_credentials,
+    tag_user,
     update_profile_credentials,
     validate_username_prefix,
     verify_iam_user_exists,
@@ -75,6 +77,12 @@ def main():
         "--print-policy",
         action="store_true",
         help="Print the recommended IAM policy for the current user (personalized with account ID and username)",
+    )
+    parser.add_argument(
+        "--chown",
+        metavar="OWNER",
+        help="Delegate user management to another user (managers only). Creates user outside namespace (one-time only). "
+        "Usage: ./iam-sorry --profile iam-sorry jimmy-bedrock --chown jimmy",
     )
     parser.add_argument(
         "profile_to_manage",
@@ -395,13 +403,20 @@ def main():
         print(f"IAM user verified: {iam_username}")
 
     # Validate username prefix (manager can only manage users with matching prefix)
+    # UNLESS --chown is specified (one-time delegation)
     # Get the manager's username first
     manager_username = get_current_iam_user(manager_profile)
-    is_valid, reason = validate_username_prefix(manager_username, iam_username)
 
-    if not is_valid:
-        print(f"Error: {reason}", file=sys.stderr)
-        sys.exit(1)
+    if args.chown:
+        # With --chown, we bypass prefix validation (one-time delegation to another user)
+        owner_username = args.chown
+        print(f"⚠ Delegating user '{iam_username}' to '{owner_username}' (one-time operation)")
+    else:
+        # Normal case: validate prefix matching
+        is_valid, reason = validate_username_prefix(manager_username, iam_username)
+        if not is_valid:
+            print(f"Error: {reason}", file=sys.stderr)
+            sys.exit(1)
 
     print(f"Requesting temporary credentials (valid for {args.duration} hours)...")
 
@@ -412,10 +427,39 @@ def main():
     # (i.e., we're storing the powerful permanent credentials, not temp credentials)
     should_encrypt = args.encrypt and (args.profile_to_manage == manager_profile)
 
+    # Check if user already has owner tag (prevent re-chown)
+    if args.chown:
+        existing_tags = get_user_tags(manager_profile, iam_username)
+        if "owner" in existing_tags:
+            print(
+                f"Error: User '{iam_username}' is already delegated to '{existing_tags['owner']}'",
+                file=sys.stderr,
+            )
+            print(
+                f"Cannot re-delegate an already delegated user (one-time operation only)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Update the profile (with optional encryption only for manager profile)
     update_profile_credentials(
         args.profile_to_manage, credentials, iam_username, encrypt=should_encrypt
     )
+
+    # Apply delegation tags if --chown is specified
+    if args.chown:
+        try:
+            tags_to_apply = {
+                "owner": owner_username,
+                "delegated-by": manager_username,
+            }
+            tag_user(manager_profile, iam_username, tags_to_apply)
+            print(f"✓ Applied delegation tags:")
+            print(f"  - owner: {owner_username}")
+            print(f"  - delegated-by: {manager_username}")
+        except Exception as e:
+            print(f"Error: Failed to apply delegation tags: {e}", file=sys.stderr)
+            sys.exit(1)
 
     expiration = credentials["Expiration"]
     print(f"✓ Successfully updated profile '{args.profile_to_manage}'")
@@ -427,6 +471,8 @@ def main():
         print(
             f"ℹ Encryption only applies to manager profile (--profile), not generated temporary credentials"
         )
+    if args.chown:
+        print(f"ℹ User delegated to '{owner_username}' - they can now manage their own credentials")
 
     return 0
 
