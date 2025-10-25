@@ -418,6 +418,21 @@ def main():
             print(f"Error: {reason}", file=sys.stderr)
             sys.exit(1)
 
+        # Check if user is delegated to someone else (read-only access for manager)
+        user_tags = get_user_tags(manager_profile, iam_username)
+        if "owner" in user_tags:
+            owner = user_tags["owner"]
+            if owner != manager_username:
+                print(
+                    f"⚠ User '{iam_username}' is delegated to '{owner}'",
+                    file=sys.stderr,
+                )
+                print(
+                    f"You can view this user but cannot manage credentials (read-only access)",
+                    file=sys.stderr,
+                )
+                sys.exit(0)
+
     print(f"Requesting temporary credentials (valid for {args.duration} hours)...")
 
     # Get temporary credentials
