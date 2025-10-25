@@ -416,8 +416,20 @@ def get_iam_user_for_access_key(profile_name, access_key_id):
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchEntity":
             return None
-        print(f"Error: Failed to look up IAM user", file=sys.stderr)
-        print(f"Details: {e}", file=sys.stderr)
+        error_code = e.response["Error"]["Code"]
+        if error_code == "InvalidClientTokenId":
+            print(
+                f"Error: Manager profile '{profile_name}' has invalid credentials",
+                file=sys.stderr,
+            )
+            print(
+                f"\nThe '{profile_name}' profile credentials are not valid or have expired.",
+                file=sys.stderr,
+            )
+            print(f"Please check your ~/.aws/credentials file.", file=sys.stderr)
+        else:
+            print(f"Error: Failed to look up IAM user", file=sys.stderr)
+            print(f"Details: {e}", file=sys.stderr)
         sys.exit(1)
     except BotoCoreError as e:
         print(f"Error: AWS connection failed", file=sys.stderr)
@@ -444,8 +456,20 @@ def verify_iam_user_exists(profile_name, username):
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchEntity":
             return False
-        print(f"Error: Failed to check if user exists", file=sys.stderr)
-        print(f"Details: {e}", file=sys.stderr)
+        error_code = e.response["Error"]["Code"]
+        if error_code == "InvalidClientTokenId":
+            print(
+                f"Error: Manager profile '{profile_name}' has invalid credentials",
+                file=sys.stderr,
+            )
+            print(
+                f"\nThe '{profile_name}' profile credentials are not valid or have expired.",
+                file=sys.stderr,
+            )
+            print(f"Please check your ~/.aws/credentials file.", file=sys.stderr)
+        else:
+            print(f"Error: Failed to check if user '{username}' exists", file=sys.stderr)
+            print(f"Details: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -476,8 +500,23 @@ def get_temp_credentials_for_user(manager_profile, username, duration_seconds=43
             "Expiration": credentials["Expiration"].isoformat(),
         }
     except ClientError as e:
-        print(f"Error: Failed to get temporary credentials for user '{username}'", file=sys.stderr)
-        print(f"Details: {e}", file=sys.stderr)
+        error_code = e.response["Error"]["Code"]
+        if error_code == "InvalidClientTokenId":
+            print(
+                f"Error: Manager profile '{manager_profile}' has invalid credentials",
+                file=sys.stderr,
+            )
+            print(
+                f"\nThe '{manager_profile}' profile credentials are not valid or have expired.",
+                file=sys.stderr,
+            )
+            print(f"Please check your ~/.aws/credentials file.", file=sys.stderr)
+        else:
+            print(
+                f"Error: Failed to get temporary credentials for user '{username}'",
+                file=sys.stderr,
+            )
+            print(f"Details: {e}", file=sys.stderr)
         sys.exit(1)
     except BotoCoreError as e:
         print(f"Error: AWS connection failed", file=sys.stderr)
