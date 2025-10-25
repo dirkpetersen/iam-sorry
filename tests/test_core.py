@@ -47,6 +47,7 @@ class TestCredentialsFile(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_read_aws_credentials_nonexistent_file(self):
@@ -125,6 +126,7 @@ class TestSSHKeyDetection(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_is_ssh_key_password_protected_nonexistent_file(self):
@@ -152,6 +154,7 @@ class TestCredentialManagement(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @patch("iamsorry.core.get_aws_credentials_path")

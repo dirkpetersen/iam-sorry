@@ -24,9 +24,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Pull temporary AWS credentials for an IAM user and update a profile",
         epilog="Examples:\n"
-               "  AWS_PROFILE=usermanager iam-sorry admin\n"
-               "  iam-sorry --profile usermanager admin\n"
-               "  AWS_PROFILE=usermanager iam-sorry  (refresh default profile)",
+        "  AWS_PROFILE=usermanager iam-sorry admin\n"
+        "  iam-sorry --profile usermanager admin\n"
+        "  AWS_PROFILE=usermanager iam-sorry  (refresh default profile)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -66,7 +66,7 @@ def main():
         nargs="?",
         default=None,
         help="Profile name to update. If profile exists, uses its access key to determine IAM user. "
-             "If not, treats it as an IAM username. If omitted, will prompt to use 'default' profile.",
+        "If not, treats it as an IAM username. If omitted, will prompt to use 'default' profile.",
     )
 
     args = parser.parse_args()
@@ -99,7 +99,7 @@ def main():
         print(f"Access Key ID: {profile.get('aws_access_key_id', 'N/A')}")
         print(f"Secret Access Key: {profile.get('aws_secret_access_key', 'N/A')}")
         print(f"Session Token: {profile.get('aws_session_token', 'N/A')}")
-        if 'credentials_owner' in profile:
+        if "credentials_owner" in profile:
             print(f"Credentials Owner: {profile.get('credentials_owner')}")
         sys.exit(0)
 
@@ -112,9 +112,9 @@ def main():
             sys.exit(1)
 
         profile = config[args.eval]
-        access_key = profile.get('aws_access_key_id')
-        secret_key = profile.get('aws_secret_access_key')
-        session_token = profile.get('aws_session_token')
+        access_key = profile.get("aws_access_key_id")
+        secret_key = profile.get("aws_secret_access_key")
+        session_token = profile.get("aws_session_token")
 
         if not access_key or not secret_key:
             print(f"Error: Profile '{args.eval}' missing credentials", file=sys.stderr)
@@ -220,7 +220,11 @@ def main():
 
         # Ask user for confirmation
         print(f"No profile specified. Found 'default' profile with user: {iam_username}")
-        response = input("Do you want to refresh credentials for the 'default' profile? (y/n): ").strip().lower()
+        response = (
+            input("Do you want to refresh credentials for the 'default' profile? (y/n): ")
+            .strip()
+            .lower()
+        )
 
         if response != "y":
             print("Aborted.")
@@ -293,16 +297,16 @@ def main():
     print(f"Requesting temporary credentials (valid for {args.duration} hours)...")
 
     # Get temporary credentials
-    credentials = get_temp_credentials_for_user(
-        manager_profile, iam_username, duration_seconds
-    )
+    credentials = get_temp_credentials_for_user(manager_profile, iam_username, duration_seconds)
 
     # Determine if we should encrypt: only if target profile is the manager profile
     # (i.e., we're storing the powerful permanent credentials, not temp credentials)
     should_encrypt = args.encrypt and (args.profile_to_manage == manager_profile)
 
     # Update the profile (with optional encryption only for manager profile)
-    update_profile_credentials(args.profile_to_manage, credentials, iam_username, encrypt=should_encrypt)
+    update_profile_credentials(
+        args.profile_to_manage, credentials, iam_username, encrypt=should_encrypt
+    )
 
     expiration = credentials["Expiration"]
     print(f"✓ Successfully updated profile '{args.profile_to_manage}'")
@@ -311,7 +315,9 @@ def main():
     if should_encrypt:
         print(f"✓ Credentials encrypted with SSH key")
     elif args.encrypt:
-        print(f"ℹ Encryption only applies to manager profile (--profile), not generated temporary credentials")
+        print(
+            f"ℹ Encryption only applies to manager profile (--profile), not generated temporary credentials"
+        )
 
     return 0
 

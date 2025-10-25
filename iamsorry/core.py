@@ -42,17 +42,17 @@ def is_ssh_key_password_protected(ssh_key_path):
         bool: True if password protected, False if not, None if cannot determine
     """
     try:
-        with open(ssh_key_path, 'r') as f:
+        with open(ssh_key_path, "r") as f:
             lines = f.readlines()
 
         # Extract base64 content between BEGIN and END markers
         key_lines = []
         in_key = False
         for line in lines:
-            if 'BEGIN' in line:
+            if "BEGIN" in line:
                 in_key = True
                 continue
-            if 'END' in line:
+            if "END" in line:
                 break
             if in_key:
                 key_lines.append(line.strip())
@@ -61,20 +61,20 @@ def is_ssh_key_password_protected(ssh_key_path):
             return None
 
         # Decode base64
-        key_blob = base64.b64decode(''.join(key_lines))
+        key_blob = base64.b64decode("".join(key_lines))
 
         # Parse OPENSSH format
         # Magic: "openssh-key-v1\0" (15 bytes)
-        if key_blob[:15] == b'openssh-key-v1\0':
+        if key_blob[:15] == b"openssh-key-v1\0":
             # Skip magic (15 bytes)
             pos = 15
 
             # Read cipher name length (4 bytes, big-endian)
-            cipher_len = struct.unpack('>I', key_blob[pos:pos+4])[0]
+            cipher_len = struct.unpack(">I", key_blob[pos : pos + 4])[0]
             pos += 4
 
             # Read cipher name
-            cipher_name = key_blob[pos:pos+cipher_len].decode()
+            cipher_name = key_blob[pos : pos + cipher_len].decode()
 
             # If cipher is "none", key is NOT encrypted
             return cipher_name != "none"
@@ -99,7 +99,7 @@ def derive_encryption_key_from_ssh_key(ssh_key_path):
         Exception: If SSH key cannot be read
     """
     try:
-        with open(ssh_key_path, 'rb') as f:
+        with open(ssh_key_path, "rb") as f:
             ssh_key_data = f.read()
 
         # Use HKDF to derive a 256-bit key from the SSH key
@@ -107,8 +107,8 @@ def derive_encryption_key_from_ssh_key(ssh_key_path):
             algorithm=hashes.SHA256(),
             length=32,
             salt=None,
-            info=b'iam-sorry-encryption',
-            backend=default_backend()
+            info=b"iam-sorry-encryption",
+            backend=default_backend(),
         )
         encryption_key = hkdf.derive(ssh_key_data)
         return encryption_key
@@ -183,7 +183,7 @@ def decrypt_credential(encrypted_value, ssh_key_path):
             return encrypted_value  # Not encrypted, return as-is
 
         # Remove prefix and decode from base64
-        encoded_data = encrypted_value[len(ENCRYPTED_PREFIX):]
+        encoded_data = encrypted_value[len(ENCRYPTED_PREFIX) :]
         encrypted_data = base64.b64decode(encoded_data)
 
         # Split nonce (first 12 bytes) and ciphertext
@@ -200,7 +200,10 @@ def decrypt_credential(encrypted_value, ssh_key_path):
         return plaintext.decode()
     except Exception as e:
         print(f"Error: Failed to decrypt credential: {e}", file=sys.stderr)
-        print(f"Details: Make sure your SSH key is correct and ssh-agent has your passphrase.", file=sys.stderr)
+        print(
+            f"Details: Make sure your SSH key is correct and ssh-agent has your passphrase.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 
@@ -224,15 +227,17 @@ def decrypt_profile_credentials(config, profile_name, ssh_key_path):
     profile = config[profile_name]
 
     # Decrypt access key if encrypted
-    if 'aws_access_key_id' in profile and is_encrypted_credential(profile['aws_access_key_id']):
-        profile['aws_access_key_id'] = decrypt_credential(
-            profile['aws_access_key_id'], ssh_key_path
+    if "aws_access_key_id" in profile and is_encrypted_credential(profile["aws_access_key_id"]):
+        profile["aws_access_key_id"] = decrypt_credential(
+            profile["aws_access_key_id"], ssh_key_path
         )
 
     # Decrypt secret key if encrypted
-    if 'aws_secret_access_key' in profile and is_encrypted_credential(profile['aws_secret_access_key']):
-        profile['aws_secret_access_key'] = decrypt_credential(
-            profile['aws_secret_access_key'], ssh_key_path
+    if "aws_secret_access_key" in profile and is_encrypted_credential(
+        profile["aws_secret_access_key"]
+    ):
+        profile["aws_secret_access_key"] = decrypt_credential(
+            profile["aws_secret_access_key"], ssh_key_path
         )
 
 
@@ -291,14 +296,14 @@ def get_iam_user_for_access_key(profile_name, access_key_id):
         iam_client = session.client("iam")
 
         # List all IAM users and find the one with this access key
-        paginator = iam_client.get_paginator('list_users')
+        paginator = iam_client.get_paginator("list_users")
         for page in paginator.paginate():
-            for user in page['Users']:
-                username = user['UserName']
+            for user in page["Users"]:
+                username = user["UserName"]
                 # Get access keys for this user
                 keys_response = iam_client.list_access_keys(UserName=username)
-                for key in keys_response['AccessKeyMetadata']:
-                    if key['AccessKeyId'] == access_key_id:
+                for key in keys_response["AccessKeyMetadata"]:
+                    if key["AccessKeyId"] == access_key_id:
                         return username
 
         return None
@@ -355,9 +360,7 @@ def get_temp_credentials_for_user(manager_profile, username, duration_seconds=43
         sts_client = session.client("sts")
 
         # Use GetSessionToken to get temporary credentials
-        response = sts_client.get_session_token(
-            DurationSeconds=duration_seconds
-        )
+        response = sts_client.get_session_token(DurationSeconds=duration_seconds)
 
         credentials = response["Credentials"]
         return {
