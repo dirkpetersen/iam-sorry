@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iam-sorry"
+version = "0.1.0"
+description = "AWS Credentials Manager - Pull temporary credentials for an IAM user with optional SSH-key encryption"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+authors = [
+    {name = "Dirk Petersen", email = "dirk.petersen@protonmail.com"}
+]
+keywords = ["aws", "iam", "credentials", "encryption", "ssh"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+
+dependencies = [
+    "boto3>=1.40.0",
+    "botocore>=1.23.0",
+    "cryptography>=41.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "isort>=5.0",
+    "flake8>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dirkpetersen/iam-sorry"
+Documentation = "https://github.com/dirkpetersen/iam-sorry#readme"
+Repository = "https://github.com/dirkpetersen/iam-sorry.git"
+Issues = "https://github.com/dirkpetersen/iam-sorry/issues"
+
+[project.scripts]
+iam-sorry = "iamsorry.cli:main"
+
+[tool.setuptools]
+packages = ["iamsorry"]
+
+[tool.black]
+line-length = 100
+target-version = ["py36", "py37", "py38", "py39", "py310", "py311", "py312", "py313", "py314"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--cov=iamsorry --cov-report=term-missing --cov-report=html"
