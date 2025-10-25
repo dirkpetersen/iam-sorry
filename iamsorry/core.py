@@ -372,6 +372,11 @@ def generate_usermanager_policy(profile_name):
     - Manager "alice" can only manage users starting with "alice-"
     - Prefix is everything before the first hyphen (or entire username if no hyphen)
 
+    Tagging Strategy:
+    - Manager can TAG users to add restrictions (one-time setup)
+    - Manager CANNOT untag users (prevents removing restrictions)
+    - This ensures restrictions cannot be bypassed after being set
+
     Args:
         profile_name: AWS profile to use for lookups
 
@@ -423,6 +428,18 @@ def generate_usermanager_policy(profile_name):
                 "Effect": "Allow",
                 "Action": ["sts:GetSessionToken"],
                 "Resource": "*",
+            },
+            {
+                "Sid": "AddRestrictionTags",
+                "Effect": "Allow",
+                "Action": ["iam:TagUser"],
+                "Resource": user_resources,
+            },
+            {
+                "Sid": "PreventTagRemoval",
+                "Effect": "Deny",
+                "Action": ["iam:UntagUser"],
+                "Resource": user_resources,
             },
         ],
     }
