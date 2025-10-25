@@ -147,7 +147,23 @@ def main():
         creds_file = get_aws_credentials_path()
         config = read_aws_credentials(creds_file, auto_decrypt=True)
         if eval_profile not in config:
-            print(f"Error: Profile '{eval_profile}' not found", file=sys.stderr)
+            print(
+                f"Error: Profile '{eval_profile}' not found in credentials file",
+                file=sys.stderr,
+            )
+            if eval_profile == "default":
+                print(
+                    "\nThe 'default' profile does not exist. You can:",
+                    file=sys.stderr,
+                )
+                print(
+                    "  1. Create credentials: iam-sorry --profile iam-sorry <username>",
+                    file=sys.stderr,
+                )
+                print(
+                    "  2. Specify a different profile: iam-sorry --eval <profile>",
+                    file=sys.stderr,
+                )
             sys.exit(1)
 
         profile = config[eval_profile]
@@ -156,7 +172,19 @@ def main():
         session_token = profile.get("aws_session_token")
 
         if not access_key or not secret_key:
-            print(f"Error: Profile '{eval_profile}' missing credentials", file=sys.stderr)
+            print(
+                f"Error: Profile '{eval_profile}' is missing credentials",
+                file=sys.stderr,
+            )
+            if eval_profile == "default":
+                print(
+                    "\nThe 'default' profile exists but has no valid credentials.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Generate credentials with: iam-sorry --profile iam-sorry <username>",
+                    file=sys.stderr,
+                )
             sys.exit(1)
 
         # Output shell export statements
