@@ -290,7 +290,7 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
 ```bash
 # For low-risk permanent credentials (bedrock service)
-eval $(./aws-creds --eval bedrock)
+eval $(iam-sorry --eval bedrock)
 
 # Run bulk operations
 aws bedrock list-foundation-models
@@ -304,13 +304,13 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
 ```bash
 # View encrypted credentials (ciphertext, no decryption)
-./aws-creds --show-encrypted usermanager
+iam-sorry --show-encrypted usermanager
 
 # View decrypted credentials (requires SSH passphrase)
-./aws-creds --show-decrypted usermanager
+iam-sorry --show-decrypted usermanager
 
 # View plaintext credentials (for unencrypted profiles)
-./aws-creds --show-decrypted bedrock
+iam-sorry --show-decrypted bedrock
 ```
 
 ## Command Reference
@@ -326,23 +326,23 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
 ```bash
 # Generate temporary credentials
-./aws-creds --profile usermanager admin
-./aws-creds --profile usermanager --duration 12 admin
+iam-sorry --profile usermanager admin
+iam-sorry --profile usermanager --duration 12 admin
 
 # Encrypt manager profile (one-time)
-./aws-creds --profile usermanager --encrypt
+iam-sorry --profile usermanager --encrypt
 
 # Show encrypted credentials
-./aws-creds --show-encrypted usermanager
+iam-sorry --show-encrypted usermanager
 
 # Show decrypted credentials
-./aws-creds --show-decrypted usermanager
+iam-sorry --show-decrypted usermanager
 
 # Output environment export statements
-./aws-creds --eval usermanager
+iam-sorry --eval usermanager
 
 # Refresh default profile (prompts for confirmation)
-AWS_PROFILE=usermanager ./aws-creds
+AWS_PROFILE=usermanager iam-sorry
 ```
 
 ## Security Architecture
@@ -373,7 +373,7 @@ Credential Value + Random Nonce
 __encrypted__:<base64>
     ↓
 ~/.aws/credentials (at-rest encrypted)
-    ↓ (eval $(./aws-creds --eval usermanager))
+    ↓ (eval $(iam-sorry --eval usermanager))
 Memory only (never on disk)
     ↓ (eval injects into environment)
 AWS SDK access
@@ -418,8 +418,8 @@ eval $(ssh-agent -s)
 ssh-add ~/.ssh/id_ed25519
 
 # Now encryption/decryption won't prompt for passphrase
-./aws-creds --profile usermanager --encrypt
-eval $(./aws-creds --eval usermanager)
+iam-sorry --profile usermanager --encrypt
+eval $(iam-sorry --eval usermanager)
 
 # Kill agent when done
 ssh-agent -k
@@ -430,7 +430,7 @@ ssh-agent -k
 To use a different SSH key, modify the script:
 
 ```python
-# In aws-creds, change:
+# In iam-sorry tool, change:
 def get_ssh_key_path():
     return os.path.expanduser("~/.ssh/id_ed25519")
 
@@ -464,7 +464,7 @@ to specify an explicit profile name.
 
 **Solution**: Always use an explicit profile name:
 ```bash
-./aws-creds --profile usermanager --encrypt
+iam-sorry --profile usermanager --encrypt
 ```
 
 ### "Could not determine IAM user"
@@ -475,7 +475,7 @@ Error: Could not determine IAM user for profile 'admin'
 
 **Solution**: Create the profile first:
 ```bash
-./aws-creds --profile usermanager admin
+iam-sorry --profile usermanager admin
 ```
 
 ### "Profile does not exist"
@@ -519,10 +519,10 @@ aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 EOF
 
 # 3. Encrypt
-./aws-creds --profile usermanager --encrypt
+iam-sorry --profile usermanager --encrypt
 
 # 4. Verify
-./aws-creds --show-encrypted usermanager
+iam-sorry --show-encrypted usermanager
 ```
 
 ### Example 2: Batch IAM Provisioning
@@ -531,7 +531,7 @@ EOF
 #!/bin/bash
 # provision-users.sh
 
-eval $(./aws-creds --eval usermanager)
+eval $(iam-sorry --eval usermanager)
 
 for username in alice bob charlie; do
   echo "Creating user: $username"
@@ -554,7 +554,7 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 #!/bin/bash
 # deploy-stacks.sh
 
-eval $(./aws-creds --eval usermanager)
+eval $(iam-sorry --eval usermanager)
 
 REGIONS=("us-east-1" "us-west-2" "eu-west-1")
 STACK_NAME="my-infrastructure"

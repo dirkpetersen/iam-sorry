@@ -50,8 +50,32 @@ jobs:
           flags: unittests
           fail_ci_if_error: false
 
+  test-compat:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.6', '3.7', '3.8', '3.9']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Run tests with pytest (Python 3.6-3.9 compatibility)
+        run: |
+          pytest tests/ -v
+
   build:
-    needs: test
+    needs: [test, test-compat]
     runs-on: ubuntu-latest
 
     steps:
@@ -96,8 +120,6 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
