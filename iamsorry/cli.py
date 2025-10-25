@@ -138,15 +138,10 @@ def main():
 
     # Handle --eval flag to output shell export statements
     if args.eval is not None:
-        # If --eval has no argument, use the --profile value
-        eval_profile = args.eval if args.eval else args.profile or os.environ.get("AWS_PROFILE")
-
-        if not eval_profile:
-            print(
-                "Error: No profile specified for --eval. Use --profile or AWS_PROFILE environment variable",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        # If --eval has no argument, use the --profile value, default to iam-sorry
+        eval_profile = (
+            args.eval if args.eval else args.profile or os.environ.get("AWS_PROFILE") or "iam-sorry"
+        )
 
         creds_file = get_aws_credentials_path()
         config = read_aws_credentials(creds_file, auto_decrypt=True)
