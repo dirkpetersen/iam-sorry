@@ -456,15 +456,22 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
     """
     Generate a least-privilege IAM policy for the current user to act as usermanager.
 
-    This policy enforces username prefix matching:
-    - Manager "dirk-admin" can only manage users starting with "dirk-" or exactly "dirk"
-    - Manager "alice" can only manage users starting with "alice-"
+    This policy enforces username prefix matching for credential management:
+    - Manager "dirk-admin" can manage users starting with "dirk-" or exactly "dirk"
+    - Manager "alice" can manage users starting with "alice-"
     - Prefix is everything before the first hyphen (or entire username if no hyphen)
+
+    Policy Structure:
+    - CreateUser: Allows creating ANY user (needed for --chown delegation to other managers)
+    - ManageUserCredentials: Restricted to prefix-matched users only
+    - ManageRestrictionTags: Restricted to prefix-matched users only
+    - PreventTagRemovalOrModification: Prevents removing tags from prefix-matched users
 
     Tagging Strategy:
     - Manager can TAG users to add restrictions (one-time setup)
     - Manager CANNOT untag users (prevents removing restrictions)
     - This ensures restrictions cannot be bypassed after being set
+    - Used for delegation: owner and delegated-by tags mark delegated users
 
     Args:
         profile_name: AWS profile to use for lookups
@@ -486,7 +493,7 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
 
     # Build resource patterns: {prefix} and {prefix}-*
     # Example: if prefix is "dirk", allow "dirk" and "dirk-*"
-    user_resources = [
+    namespace_resources = [
         f"arn:aws:iam::{account_id}:user/{prefix}",
         f"arn:aws:iam::{account_id}:user/{prefix}-*",
     ]
@@ -498,7 +505,7 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
                 "Sid": "CreateUsers",
                 "Effect": "Allow",
                 "Action": ["iam:CreateUser"],
-                "Resource": user_resources,
+                "Resource": "*",  # Allow creating ANY user (needed for --chown delegation)
             },
             {
                 "Sid": "ManageUserCredentials",
@@ -510,7 +517,7 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
                     "iam:ListAccessKeys",
                     "iam:GetAccessKeyLastUsed",
                 ],
-                "Resource": user_resources,
+                "Resource": namespace_resources,  # Restrict to namespace
             },
             {
                 "Sid": "ListUsersForLookup",
@@ -531,13 +538,13 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
                     "iam:TagUser",
                     "iam:ListUserTags",
                 ],
-                "Resource": user_resources,
+                "Resource": namespace_resources,  # Restrict to namespace
             },
             {
                 "Sid": "PreventTagRemovalOrModification",
                 "Effect": "Deny",
                 "Action": ["iam:UntagUser"],
-                "Resource": user_resources,
+                "Resource": namespace_resources,  # Restrict to namespace
             },
         ],
     }
