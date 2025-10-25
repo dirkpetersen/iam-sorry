@@ -402,7 +402,7 @@ def generate_usermanager_policy(profile_name):
             {
                 "Sid": "CreateUsers",
                 "Effect": "Allow",
-                "Action": ["iam:CreateUser", "iam:AddUserToGroup", "iam:RemoveUserFromGroup"],
+                "Action": ["iam:CreateUser"],
                 "Resource": user_resources,
             },
             {
@@ -430,13 +430,16 @@ def generate_usermanager_policy(profile_name):
                 "Resource": "*",
             },
             {
-                "Sid": "AddRestrictionTags",
+                "Sid": "ManageRestrictionTags",
                 "Effect": "Allow",
-                "Action": ["iam:TagUser"],
+                "Action": [
+                    "iam:TagUser",
+                    "iam:ListUserTags",
+                ],
                 "Resource": user_resources,
             },
             {
-                "Sid": "PreventTagRemoval",
+                "Sid": "PreventTagRemovalOrModification",
                 "Effect": "Deny",
                 "Action": ["iam:UntagUser"],
                 "Resource": user_resources,
