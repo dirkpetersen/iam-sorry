@@ -18,19 +18,6 @@ A powerful Python CLI utility for managing temporary AWS credentials with option
 
 ## Quick Start
 
-### Prerequisites
-
-```bash
-# Python 3.6+
-python3 --version
-
-# AWS credentials for a manager IAM user (temporary profile)
-# A password-protected ED25519 SSH key (~/.ssh/id_ed25519)
-
-# Install dependencies
-pip install boto3 botocore cryptography
-```
-
 ### Basic Usage
 
 ```bash
@@ -111,8 +98,8 @@ The longer-term architectural vision is a centralized, auditable system:
 │                                                             │
 │  User Authentication                                       │
 │  ├─ Active Directory / LDAP                               │
-│  ├─ SAML / OAuth                                          │
-│  └─ Browser-based SSO                                     │
+│  ├─ Kerberos (krb5)                                       │
+│  └─ Headless authentication (no browser required)         │
 │         ↓                                                  │
 │  Department IAM Service                                    │
 │  ├─ Service runs with high-privilege IAM role             │
@@ -144,7 +131,7 @@ Benefits:
 - All IAM actions attributed to specific users
 - Centralized audit trail for compliance
 - Fine-grained permission delegation
-- Browser-based authentication (AD/SAML)
+- Kerberos authentication (works in headless environments)
 - No credentials stored on individual machines
 
 ### Current vs. Future Tradeoffs
@@ -152,11 +139,11 @@ Benefits:
 | Aspect | Current (SSH-Key) | Future (Service) |
 |--------|-------------------|------------------|
 | **Setup** | Per-user (self-service) | Per-department (IT-managed) |
-| **Auth** | SSH passphrase | Active Directory / SSO |
+| **Auth** | SSH passphrase | Kerberos (krb5) |
 | **Credentials** | Distributed (each user) | Centralized (service only) |
 | **Audit Trail** | Limited (per-machine logs) | Complete (all via service) |
 | **Offline Access** | ✓ Yes | ✗ No (requires network) |
-| **Headless Systems** | ✓ Excellent | ✗ Needs browser |
+| **Headless Systems** | ✓ Excellent | ✓ Excellent (Kerberos capable) |
 | **Security Model** | Good (encrypted at-rest) | Excellent (centralized) |
 | **Compliance** | Medium (per-machine audit) | High (centralized logging) |
 
@@ -646,6 +633,8 @@ Created with focus on practical AWS credential security for DevOps and infrastru
 - **aws-cli**: Official AWS command-line interface
 - **aws-iam**: AWS IAM management tool
 - **aws-sso**: AWS Identity Center for organizations
+- **kinit / kerberos**: For future Kerberos-based authentication integration
+- **sssd**: System Security Services Daemon for AD/Kerberos integration
 
 ## FAQ
 
