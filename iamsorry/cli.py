@@ -349,6 +349,27 @@ def main():
 
     # Handle --encrypt flag to encrypt the manager profile itself
     if args.encrypt and args.profile_to_manage is None:
+        # First, check if credentials are already encrypted (read without auto-decrypt)
+        raw_config = read_aws_credentials(creds_file, auto_decrypt=False)
+
+        if manager_profile in raw_config:
+            raw_profile = raw_config[manager_profile]
+            raw_access_key = raw_profile.get("aws_access_key_id", "")
+            raw_secret_key = raw_profile.get("aws_secret_access_key", "")
+
+            # Check if already encrypted
+            if raw_access_key.startswith("__encrypted__:") and raw_secret_key.startswith("__encrypted__:"):
+                print(
+                    f"Error: Manager profile '{manager_profile}' is already encrypted",
+                    file=sys.stderr,
+                )
+                print(
+                    "No need to encrypt again.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        # Now read with auto-decrypt for the encryption process
         config = read_aws_credentials(creds_file, auto_decrypt=True)
 
         print(f"Encrypting manager profile '{manager_profile}'...")
