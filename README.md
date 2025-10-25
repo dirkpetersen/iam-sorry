@@ -332,6 +332,107 @@ iam-sorry --eval usermanager
 AWS_PROFILE=usermanager iam-sorry
 ```
 
+### Manager Commands (Prefix-Based Access Control)
+
+```bash
+# Generate temporary credentials for user in your namespace
+iam-sorry --profile iam-sorry dirk-bedrock
+
+# Generate temporary credentials for users with matching prefix
+iam-sorry --profile iam-sorry dirk-analytics
+
+# Create user outside namespace and delegate to them (one-time only!)
+iam-sorry --profile iam-sorry jimmy-bedrock --chown jimmy
+```
+
+### Print Policy
+
+```bash
+# Show the recommended IAM policy for your user
+iam-sorry --print-policy
+
+# Account ID and username are personalized to your environment
+```
+
+## Manager Guide: User Delegation with --chown
+
+### Use Case
+
+Delegate user management to someone else (e.g., a student or teammate) without giving them manager credentials. The manager creates the user, configures it, then transfers ownership.
+
+**Example Workflow**:
+- Manager `dirk-admin` creates user `jimmy-bedrock` for student Jimmy
+- Manager configures user via AWS console, adds to groups, sets permissions
+- Manager runs: `./iam-sorry --profile iam-sorry jimmy-bedrock --chown jimmy`
+- Student Jimmy can then manage their own credentials
+- Manager loses write access (read-only viewing only)
+
+### How It Works
+
+**Step 1: Create and configure user**
+```bash
+# Manager creates user and profile
+dirk-admin$ ./iam-sorry --profile iam-sorry jimmy-bedrock
+
+# Manager configures via AWS console:
+# - Add user to security groups
+# - Add to project teams
+# - Set resource tags
+# - Configure MFA (optional)
+```
+
+**Step 2: Delegate to owner**
+```bash
+# Manager delegates ownership (ONE-TIME operation)
+dirk-admin$ ./iam-sorry --profile iam-sorry jimmy-bedrock --chown jimmy
+
+# Output:
+# ⚠ Delegating user 'jimmy-bedrock' to 'jimmy' (one-time operation)
+# ✓ Applied delegation tags:
+#   - owner: jimmy
+#   - delegated-by: dirk-admin
+# ℹ User delegated to 'jimmy' - they can now manage their own credentials
+```
+
+**Step 3: Owner manages their own credentials**
+```bash
+# Jimmy (owner) can now refresh their own credentials
+jimmy$ ./iam-sorry --profile iam-sorry jimmy-bedrock
+
+# Auto-refresh is enabled for batch operations
+jimmy$ eval $(./iam-sorry --eval jimmy-bedrock)
+```
+
+**Step 4: Original manager loses write access**
+```bash
+# Manager tries to refresh jimmy's credentials
+dirk-admin$ ./iam-sorry --profile iam-sorry jimmy-bedrock
+
+# Output:
+# ⚠ User 'jimmy-bedrock' is delegated to 'jimmy'
+# You can view this user but cannot manage credentials (read-only access)
+
+# Manager can view user info in AWS console, but cannot:
+# - Create new access keys
+# - Delete access keys
+# - Remove tags
+# - Re-delegate the user
+```
+
+### Security Features
+
+- ✅ **One-time only**: Cannot re-delegate a user that's already delegated
+- ✅ **Permanent ownership**: Owner tag prevents manager from regaining access
+- ✅ **Tag protection**: Manager cannot remove ownership tags
+- ✅ **Read-only fallback**: Manager can still view delegated users
+- ✅ **Audit trail**: `delegated-by` tag tracks original manager
+
+### Requirements for Delegation
+
+1. **Manager must have permission** to create users outside their namespace
+2. **User must not have `owner` tag** (prevents re-delegation)
+3. **Only valid when delegating to a username** (must be valid AWS IAM user eventually)
+
 ## Security Architecture
 
 ### Credential Types
