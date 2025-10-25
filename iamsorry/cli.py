@@ -302,50 +302,33 @@ def main():
         print(f"✓ Manager profile '{manager_profile}' encrypted with SSH key")
         sys.exit(0)
 
-    # If no profile_to_manage is specified, ask about iam-sorry profile
+    # If no profile_to_manage is specified, show usage error
     if args.profile_to_manage is None:
-        creds_file = get_aws_credentials_path()
-        # Auto-decrypt encrypted credentials when needed
-        creds_config = read_aws_credentials(creds_file, auto_decrypt=True)
-
-        if "iam-sorry" not in creds_config:
-            print(
-                "Error: 'iam-sorry' profile does not exist in credentials file",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        # Verify the iam-sorry profile has credentials and can determine user
-        access_key = creds_config["iam-sorry"].get("aws_access_key_id")
-        if not access_key:
-            print(
-                "Error: 'iam-sorry' profile has no aws_access_key_id",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        # Verify we can determine the IAM user for the iam-sorry profile
-        iam_username = get_iam_user_for_access_key(manager_profile, access_key)
-        if not iam_username:
-            print(
-                "Error: Could not determine IAM user for 'iam-sorry' profile",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        # Ask user for confirmation
-        print(f"No profile specified. Found 'iam-sorry' profile with user: {iam_username}")
-        response = (
-            input("Do you want to refresh credentials for the 'iam-sorry' profile? (y/n): ")
-            .strip()
-            .lower()
+        print(
+            "Error: No profile or IAM username specified",
+            file=sys.stderr,
         )
-
-        if response != "y":
-            print("Aborted.")
-            sys.exit(0)
-
-        args.profile_to_manage = "iam-sorry"
+        print(
+            "\nUsage examples:",
+            file=sys.stderr,
+        )
+        print(
+            "  iam-sorry --profile iam-sorry admin    # Generate temp credentials for 'admin' user",
+            file=sys.stderr,
+        )
+        print(
+            "  iam-sorry --profile iam-sorry newuser  # Generate credentials for new IAM user",
+            file=sys.stderr,
+        )
+        print(
+            "  iam-sorry --eval default               # Export credentials from 'default' profile",
+            file=sys.stderr,
+        )
+        print(
+            "\nNote: The 'iam-sorry' profile contains permanent manager credentials and should not be refreshed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Validate duration (convert hours to seconds)
     if args.duration < 1:  # Minimum 1 hour
