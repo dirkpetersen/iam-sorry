@@ -1,18 +1,18 @@
 """Tests for iam-sorry core module."""
 
+import configparser
 import os
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
-import configparser
+from unittest.mock import MagicMock, patch
 
 from iamsorry.core import (
-    is_encrypted_credential,
+    ENCRYPTED_PREFIX,
     get_aws_credentials_path,
+    is_encrypted_credential,
+    is_ssh_key_password_protected,
     read_aws_credentials,
     write_aws_credentials,
-    is_ssh_key_password_protected,
-    ENCRYPTED_PREFIX,
 )
 
 

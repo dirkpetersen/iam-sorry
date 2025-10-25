@@ -2,21 +2,20 @@
 Core encryption and credential management functions for iam-sorry.
 """
 
-import os
-import sys
-import configparser
 import base64
-import subprocess
+import configparser
+import os
 import struct
+import subprocess
+import sys
 from pathlib import Path
 
 import boto3
-from botocore.exceptions import ClientError, BotoCoreError
+from botocore.exceptions import BotoCoreError, ClientError
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-
 
 # Encryption/Decryption functions for SSH-key based credential encryption
 ENCRYPTED_PREFIX = "__encrypted__:"
