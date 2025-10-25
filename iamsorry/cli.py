@@ -94,11 +94,12 @@ def main():
 
         try:
             current_user = get_current_iam_user(manager_profile)
+            account_id = get_aws_account_id(manager_profile)
             policy = generate_usermanager_policy(manager_profile)
 
             # Print with nice formatting
             print(f"# IAM Policy for usermanager: {current_user}")
-            print(f"# Account: {policy['Statement'][0]['Resource'].split(':')[4]}")
+            print(f"# Account: {account_id}")
             print(f"# Generated for: {current_user}")
             print()
             print(json.dumps(policy, indent=2))
