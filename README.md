@@ -548,7 +548,7 @@ iam-sorry --profile iam-sorry alice           # ✗ Denied (cannot create self)
 
 **IAM Policy Enforcement**:
 
-The generated IAM policy automatically restricts resource access:
+The generated IAM policy enforces namespace restrictions on credential management:
 
 ```json
 {
@@ -557,7 +557,13 @@ The generated IAM policy automatically restricts resource access:
     {
       "Sid": "CreateUsers",
       "Effect": "Allow",
-      "Action": ["iam:CreateUser", "iam:CreateAccessKey", "..."],
+      "Action": ["iam:CreateUser"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageUserCredentials",
+      "Effect": "Allow",
+      "Action": ["iam:CreateAccessKey", "iam:DeleteAccessKey", "..."],
       "Resource": [
         "arn:aws:iam::123456789012:user/dirk",
         "arn:aws:iam::123456789012:user/dirk-*"
@@ -567,22 +573,33 @@ The generated IAM policy automatically restricts resource access:
 }
 ```
 
+**Key Policy Design**:
+- **CreateUser**: Allows creating ANY user (supports --chown delegation to other namespaces)
+- **Credential Management**: Restricted to namespace users only (dirk* users)
+- **CLI Validation**: Prevents accidental creation outside namespace (unless using --chown)
+- **Delegation Tags**: Mark delegated users with owner tag to prevent re-delegation
+
 **CLI Validation**:
 
-The tool validates prefix matching before attempting AWS API calls:
+The tool validates prefix matching before attempting AWS API calls (unless using --chown):
 
 ```bash
 $ iam-sorry --profile iam-sorry alice
 Error: Username 'alice' does not match required prefix.
 Manager 'dirk-admin' (prefix: 'dirk') can only manage users named 'dirk' or 'dirk-*'
+
+$ iam-sorry --profile iam-sorry cj-moin --chown cj
+⚠ Delegating user 'cj-moin' to 'cj' (one-time operation)
+✓ Successfully updated profile 'cj-moin'
 ```
 
 **Security Benefits**:
 
-- ✅ Prevents manager from creating/managing users outside their namespace
-- ✅ Enforced at both IAM policy level (AWS) and CLI level (client-side)
+- ✅ Managers can create users in other namespaces only with explicit --chown flag
+- ✅ Credential management restricted to namespace (CLI + IAM policy enforcement)
+- ✅ Delegation tags prevent accidental re-delegation
 - ✅ Clear ownership: `dirk-admin` owns all `dirk-*` users
-- ✅ Simplifies auditing: track which manager created which users
+- ✅ Simplifies auditing: track which manager created and delegated which users
 
 ### Tagging Strategy for Permanent Restrictions
 
