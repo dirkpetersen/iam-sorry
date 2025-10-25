@@ -59,7 +59,9 @@ def main():
     parser.add_argument(
         "--eval",
         metavar="PROFILE",
-        help="Output shell export statements for a profile's credentials (for eval in shell scripts)",
+        nargs="?",
+        const=None,
+        help="Output shell export statements for a profile's credentials (for eval in shell scripts). If no profile specified, uses --profile value.",
     )
     parser.add_argument(
         "profile_to_manage",
@@ -104,20 +106,30 @@ def main():
         sys.exit(0)
 
     # Handle --eval flag to output shell export statements
-    if args.eval:
-        creds_file = get_aws_credentials_path()
-        config = read_aws_credentials(creds_file, auto_decrypt=True)
-        if args.eval not in config:
-            print(f"Error: Profile '{args.eval}' not found", file=sys.stderr)
+    if args.eval is not None:
+        # If --eval has no argument, use the --profile value
+        eval_profile = args.eval if args.eval else args.profile or os.environ.get("AWS_PROFILE")
+
+        if not eval_profile:
+            print(
+                "Error: No profile specified for --eval. Use --profile or AWS_PROFILE environment variable",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
-        profile = config[args.eval]
+        creds_file = get_aws_credentials_path()
+        config = read_aws_credentials(creds_file, auto_decrypt=True)
+        if eval_profile not in config:
+            print(f"Error: Profile '{eval_profile}' not found", file=sys.stderr)
+            sys.exit(1)
+
+        profile = config[eval_profile]
         access_key = profile.get("aws_access_key_id")
         secret_key = profile.get("aws_secret_access_key")
         session_token = profile.get("aws_session_token")
 
         if not access_key or not secret_key:
-            print(f"Error: Profile '{args.eval}' missing credentials", file=sys.stderr)
+            print(f"Error: Profile '{eval_profile}' missing credentials", file=sys.stderr)
             sys.exit(1)
 
         # Output shell export statements
