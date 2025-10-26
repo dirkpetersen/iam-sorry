@@ -162,7 +162,7 @@ Benefits:
 
 The interim SSH-key solution is chosen because:
 
-1. **Existing Infrastructure**: Most users already have password-protected SSH keys
+1. **Existing Infrastructure**: Most shell users already have password-protected SSH keys
 2. **Headless Compatibility**: Works on HPC nodes, servers without browser
 3. **No Additional Setup**: Leverages existing ssh-agent workflows
 4. **Quick Deployment**: Can be deployed immediately to self-sufficient users
@@ -185,10 +185,8 @@ This allows departments to:
 - Environments without centralized SSO/AD integration
 
 **This Tool is NOT For:**
-- Organizations with strong centralized IT governance
 - Non-technical end users
 - Systems requiring browser-based authentication
-- Highly regulated environments (use service approach)
 
 ## Installation
 
@@ -280,6 +278,13 @@ aws_access_key_id = AKIA...
 aws_secret_access_key = ...
 ```
 
+Add these to `~/.aws/config`:
+
+```ini
+[profile iam-sorry]
+region = us-west-2
+```
+
 ### 4. Encrypt iam-sorry Profile (Required)
 
 ```bash
@@ -290,7 +295,7 @@ iam-sorry --encrypt
 
 ## Getting Started Workflow
 
-Once you have your iam-sorry manager user set up, here's the complete workflow:
+You have your iam-sorry manager user set up only once, here's the complete workflow:
 
 ### Step 1: Initial Setup (One-Time)
 
