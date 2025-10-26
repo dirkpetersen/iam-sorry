@@ -428,7 +428,7 @@ You can use iam-sorry as a Python library in your code, providing the same funct
 The simplest way - creates a boto3 session with auto-decrypted credentials:
 
 ```python
-from iamsorry.core import create_session_with_profile
+from iamsorry import create_session_with_profile
 
 # Create a session with auto-decrypted credentials
 session = create_session_with_profile('dirk-admin')
@@ -457,7 +457,7 @@ users = iam.list_users()
 Similar to `eval $(iam-sorry --eval profile)` but in Python:
 
 ```python
-from iamsorry.core import read_aws_credentials, get_aws_credentials_path
+from iamsorry import read_aws_credentials, get_aws_credentials_path
 import os
 
 # Read and auto-decrypt credentials
@@ -495,7 +495,7 @@ if 'AWS_SESSION_TOKEN' in os.environ:
 For cases where you need raw credential values:
 
 ```python
-from iamsorry.core import read_aws_credentials, get_aws_credentials_path
+from iamsorry import read_aws_credentials, get_aws_credentials_path
 
 # Read credentials (auto-decrypt if encrypted)
 creds_file = get_aws_credentials_path()
@@ -522,7 +522,7 @@ my_custom_aws_client(access_key, secret_key, session_token)
 Backup S3 buckets using iam-sorry encrypted credentials.
 """
 
-from iamsorry.core import create_session_with_profile
+from iamsorry import create_session_with_profile
 import sys
 
 def backup_buckets(profile_name, destination):
@@ -564,7 +564,7 @@ if __name__ == '__main__':
 AWS monitoring service using iam-sorry credentials with auto-refresh.
 """
 
-from iamsorry.core import (
+from iamsorry import (
     create_session_with_profile,
     credentials_need_refresh,
     read_aws_credentials,
