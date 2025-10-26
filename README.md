@@ -218,14 +218,122 @@ ssh-keygen -l -f ~/.ssh/id_ed25519
 ssh-keygen -p -f ~/.ssh/id_ed25519
 ```
 
-### 3. Setup Manager Profile
+### 3. Create iam-sorry Manager User
 
-Add your IAM manager credentials to `~/.aws/credentials`:
+You have **two options** to create your iam-sorry manager user:
 
-```ini
-[usermanager]
+#### Option 1: Automated (Recommended) - If You Have IAM Admin Access
+
+If you have a profile with full IAM admin permissions:
+
+```bash
+# Create the manager user with inline policy (one command!)
+iam-sorry --profile iam-admin --create-iam-sorry dirk-iam-sorry
+
+# This will:
+# 1. Create IAM user 'dirk-iam-sorry'
+# 2. Generate and attach inline policy 'iam-sorry-dirk'
+# 3. Create access key
+# 4. Display credentials in .aws/credentials format
+```
+
+**Output**:
+```
+======================================================================
+CREDENTIALS (add to ~/.aws/credentials)
+======================================================================
+
+[iam-sorry]
 aws_access_key_id = AKIA...
 aws_secret_access_key = ...
+
+======================================================================
+IMPORTANT: Save these credentials now - they cannot be retrieved later!
+======================================================================
+```
+
+**Recommended username format**: `<prefix>-iam-sorry` (e.g., `dirk-iam-sorry`, `alice-iam-sorry`)
+
+#### Option 2: Manual - Request from Your AWS Administrator
+
+If you don't have IAM admin access, request your administrator create the user:
+
+```bash
+# Generate the policy document
+iam-sorry --print-policy dirk
+
+# Send the output to your AWS administrator with these instructions:
+# 1. Create IAM user 'dirk-iam-sorry' (or '<prefix>-iam-sorry')
+# 2. Attach the policy as an inline policy named 'iam-sorry-dirk'
+# 3. Create access key and provide credentials
+```
+
+Your administrator will provide you with:
+- AWS Access Key ID
+- AWS Secret Access Key
+
+Add these to `~/.aws/credentials`:
+
+```ini
+[iam-sorry]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+```
+
+### 4. Encrypt iam-sorry Profile (Required)
+
+```bash
+# Encrypt your permanent manager credentials
+iam-sorry --encrypt
+# ✓ Manager profile 'iam-sorry' encrypted with SSH key
+```
+
+## Getting Started Workflow
+
+Once you have your iam-sorry manager user set up, here's the complete workflow:
+
+### Step 1: Initial Setup (One-Time)
+
+Create your iam-sorry manager user (choose Option 1 or Option 2 above) and encrypt the profile.
+
+### Step 2: Create and Manage Users
+
+Use the iam-sorry profile to create users in your namespace with temporary credentials:
+
+```bash
+# Create new users (auto-creates IAM user if doesn't exist)
+iam-sorry dirk-admin
+# ✓ IAM user 'dirk-admin' created
+# ✓ Successfully updated profile 'dirk-admin'
+# ✓ Credentials expire at: 2025-10-26T12:00:00
+
+iam-sorry dirk-bedrock
+# ✓ IAM user 'dirk-bedrock' created
+# ✓ Credentials expire at: 2025-10-26T12:00:00
+
+# Refresh credentials for existing profiles (before they expire)
+iam-sorry dirk-admin
+# ✓ Successfully updated profile 'dirk-admin'
+# ✓ Credentials expire at: 2025-10-27T12:00:00
+```
+
+**Important Notes**:
+- **New users created by iam-sorry**: Have restrictive inline policy `iam-sorry-<prefix>` automatically attached, providing strong protection
+- **Existing IAM users** (created before iam-sorry): Can refresh their credentials, but they don't have the restrictive inline policy and are not as well protected from future permission changes
+
+### Step 3: Use Temporary Credentials
+
+```bash
+# Use the temporary credentials profile
+export AWS_PROFILE=dirk-admin
+aws s3 ls
+
+# Or inject into environment for batch operations
+eval $(iam-sorry --eval dirk-admin)
+for bucket in bucket1 bucket2; do
+  aws s3 sync ./data s3://$bucket/
+done
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
 
 ## Usage Guide
