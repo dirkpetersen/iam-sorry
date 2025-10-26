@@ -86,7 +86,7 @@ def is_ssh_key_password_protected(ssh_key_path):
 
         return None
 
-    except Exception:
+    except (KeyError, ValueError, UnicodeDecodeError, struct.error, OSError):
         return None
 
 
@@ -111,7 +111,7 @@ def derive_encryption_key_from_ssh_key(ssh_key_path):
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=None,
+            salt=b"iam-sorry-v1-salt-2025",
             info=b"iam-sorry-encryption",
             backend=default_backend(),
         )
@@ -613,7 +613,7 @@ def write_aws_credentials(creds_file, config):
     try:
         with os.fdopen(fd, "w") as f:
             config.write(f)
-    except:
+    except Exception:
         # If write fails, close fd to prevent leak
         os.close(fd)
         raise
@@ -983,8 +983,8 @@ def update_profile_credentials(profile_name, credentials, iam_username=None, enc
                 region = config_reader[iam_sorry_section].get("region", "us-east-1")
             elif "iam-sorry" in config_reader:
                 region = config_reader["iam-sorry"].get("region", "us-east-1")
-        except:
-            pass  # Use default if anything fails
+        except (OSError, configparser.Error):
+            pass  # Use default region if config read fails
 
         config_parser[profile_section]["region"] = region
 

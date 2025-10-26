@@ -107,7 +107,7 @@ def main():
             try:
                 unix_username = pwd.getpwuid(os.getuid()).pw_name
                 user_prefix = unix_username
-            except:
+            except (KeyError, OSError):
                 print(
                     "Error: Could not determine current Unix username",
                     file=sys.stderr,
@@ -116,6 +116,23 @@ def main():
         else:
             # --print-policy was specified with an argument
             user_prefix = args.print_policy
+
+        # Validate user prefix format (alphanumeric and hyphens only)
+        import re
+        if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$', user_prefix):
+            print(
+                f"Error: Invalid prefix format '{user_prefix}'",
+                file=sys.stderr,
+            )
+            print(
+                "Prefix must contain only alphanumeric characters and hyphens",
+                file=sys.stderr,
+            )
+            print(
+                "Examples: 'dirk', 'alice', 'bob-team'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         try:
             account_id = get_aws_account_id(manager_profile)
