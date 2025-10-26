@@ -572,8 +572,6 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
     Returns:
         dict: IAM policy document
     """
-    import json
-
     account_id = get_aws_account_id(profile_name)
 
     # If user_prefix not specified, extract from current IAM user
@@ -958,7 +956,7 @@ def credentials_need_refresh(profile, threshold_minutes=5):
     Returns:
         tuple: (needs_refresh: bool, reason: str)
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     # Permanent credentials don't need refresh
     if "aws_session_token" not in profile or not profile["aws_session_token"]:

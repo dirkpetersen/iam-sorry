@@ -19,8 +19,8 @@ __email__ = "dirk.petersen@protonmail.com"
 __license__ = "MIT"
 
 from .core import (
-    credentials_need_refresh,
     create_iam_user,
+    credentials_need_refresh,
     decrypt_credential,
     encrypt_credential,
     extract_username_prefix,

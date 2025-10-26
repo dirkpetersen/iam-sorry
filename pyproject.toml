@@ -7,7 +7,7 @@ name = "iam-sorry"
 version = "0.1.0"
 description = "AWS Credentials Manager - Pull temporary credentials for an IAM user with optional SSH-key encryption"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Dirk Petersen", email = "dirk.petersen@protonmail.com"}
@@ -22,15 +22,10 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: System :: Systems Administration",
     "Topic :: Utilities",
 ]
@@ -64,7 +59,7 @@ packages = ["iamsorry"]
 
 [tool.black]
 line-length = 100
-target-version = ["py36", "py37", "py38", "py39", "py310", "py311", "py312", "py313", "py314"]
+target-version = ["py310", "py311", "py312", "py313"]
 
 [tool.isort]
 profile = "black"

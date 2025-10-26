@@ -4,7 +4,7 @@ import configparser
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from iamsorry.core import (
     ENCRYPTED_PREFIX,

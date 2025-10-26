@@ -8,12 +8,11 @@ import os
 import sys
 
 from .core import (
-    credentials_need_refresh,
     create_iam_user,
+    credentials_need_refresh,
     encrypt_credential,
     generate_usermanager_policy,
     get_aws_account_id,
-    get_aws_config_path,
     get_aws_credentials_path,
     get_current_iam_user,
     get_iam_user_for_access_key,
@@ -119,7 +118,8 @@ def main():
 
         # Validate user prefix format (alphanumeric and hyphens only)
         import re
-        if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$', user_prefix):
+
+        if not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$", user_prefix):
             print(
                 f"Error: Invalid prefix format '{user_prefix}'",
                 file=sys.stderr,
@@ -152,8 +152,12 @@ def main():
             print("# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print()
             print("# 1. Send this policy to your AWS administrator")
-            print(f"#    Administrator should create a highly restricted IAM user (e.g., '{user_prefix}-mgr')")
-            print(f"#    who can create other users with prefix '{user_prefix}' and refresh their credentials")
+            print(
+                f"#    Administrator should create a highly restricted IAM user (e.g., '{user_prefix}-mgr')"
+            )
+            print(
+                f"#    who can create other users with prefix '{user_prefix}' and refresh their credentials"
+            )
             print()
             print("# 2. After the user is created, the administrator should:")
             print("#    a) Log in to AWS Console")
@@ -176,7 +180,6 @@ def main():
         except Exception as e:
             print(f"Error: Failed to generate policy: {e}", file=sys.stderr)
             sys.exit(1)
-
 
     # Handle --eval flag to output shell export statements
     if args.eval is not None:
@@ -317,7 +320,10 @@ def main():
                 raw_secret_key = raw_config[eval_profile].get("aws_secret_access_key", "")
 
                 # If credentials are NOT encrypted, show warning
-                if not (raw_access_key.startswith("__encrypted__:") and raw_secret_key.startswith("__encrypted__:")):
+                if not (
+                    raw_access_key.startswith("__encrypted__:")
+                    and raw_secret_key.startswith("__encrypted__:")
+                ):
                     print(
                         "⚠ WARNING: These are UNENCRYPTED permanent credentials",
                         file=sys.stderr,
@@ -375,7 +381,9 @@ def main():
             raw_secret_key = raw_profile.get("aws_secret_access_key", "")
 
             # Check if already encrypted
-            if raw_access_key.startswith("__encrypted__:") and raw_secret_key.startswith("__encrypted__:"):
+            if raw_access_key.startswith("__encrypted__:") and raw_secret_key.startswith(
+                "__encrypted__:"
+            ):
                 print(
                     f"Error: Manager profile '{manager_profile}' is already encrypted",
                     file=sys.stderr,
@@ -457,7 +465,9 @@ def main():
             secret_key = raw_config[manager_profile].get("aws_secret_access_key", "")
 
             # Check if credentials are encrypted
-            if not (access_key.startswith("__encrypted__:") and secret_key.startswith("__encrypted__:")):
+            if not (
+                access_key.startswith("__encrypted__:") and secret_key.startswith("__encrypted__:")
+            ):
                 print(
                     "⚠ ERROR: The 'iam-sorry' profile contains UNENCRYPTED permanent credentials",
                     file=sys.stderr,
@@ -600,7 +610,7 @@ def main():
     # (The new user path already did this validation above)
     if args.profile_to_manage in creds_config:
         # Get manager username if we don't have it yet
-        if 'manager_username' not in locals():
+        if "manager_username" not in locals():
             manager_username = get_current_iam_user(manager_profile)
 
         if args.chown:
@@ -713,7 +723,10 @@ def main():
                     retry_delay *= 2  # Exponential backoff
                 else:
                     # Final attempt failed
-                    print(f"Error: Failed to apply delegation tags after {max_retries} attempts: {e}", file=sys.stderr)
+                    print(
+                        f"Error: Failed to apply delegation tags after {max_retries} attempts: {e}",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
 
     expiration = credentials["Expiration"]
