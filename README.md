@@ -559,26 +559,37 @@ The generated IAM policy enforces namespace restrictions on credential managemen
       "Sid": "CreateUsers",
       "Effect": "Allow",
       "Action": ["iam:CreateUser"],
-      "Resource": "*"
+      "Resource": ["arn:aws:iam::123456789012:user/dirk", "arn:aws:iam::123456789012:user/dirk-*"]
+    },
+    {
+      "Sid": "CreateUsersDelegation",
+      "Effect": "Allow",
+      "Action": ["iam:CreateUser"],
+      "Resource": "arn:aws:iam::*:user/*"
     },
     {
       "Sid": "ManageUserCredentials",
       "Effect": "Allow",
       "Action": ["iam:CreateAccessKey", "iam:DeleteAccessKey", "..."],
-      "Resource": [
-        "arn:aws:iam::123456789012:user/dirk",
-        "arn:aws:iam::123456789012:user/dirk-*"
-      ]
+      "Resource": ["arn:aws:iam::123456789012:user/dirk", "arn:aws:iam::123456789012:user/dirk-*"]
+    },
+    {
+      "Sid": "ManageRestrictionTagsDelegation",
+      "Effect": "Allow",
+      "Action": ["iam:TagUser", "iam:ListUserTags"],
+      "Resource": "arn:aws:iam::*:user/*"
     }
   ]
 }
 ```
 
 **Key Policy Design**:
-- **CreateUser**: Allows creating ANY user (supports --chown delegation to other namespaces)
-- **Credential Management**: Restricted to namespace users only (dirk* users)
-- **CLI Validation**: Prevents accidental creation outside namespace (unless using --chown)
-- **Delegation Tags**: Mark delegated users with owner tag to prevent re-delegation
+- **CreateUsers**: Allows creating users in manager's namespace (dirk, dirk-*)
+- **CreateUsersDelegation**: Allows creating ANY user (for --chown delegation)
+- **ManageUserCredentials**: Restricted to namespace users only
+- **ManageRestrictionTagsDelegation**: Allows tagging ANY user (needed for delegation)
+- **CLI Validation**: Enforces prefix matching and validates owner existence
+- **Permanent Restrictions**: Deny UntagUser on namespace users (tags cannot be removed)
 
 **CLI Validation**:
 
