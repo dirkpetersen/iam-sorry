@@ -556,6 +556,15 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
                 "Resource": namespace_resources,  # Restrict to namespace
             },
             {
+                "Sid": "ManageRestrictionTagsDelegation",
+                "Effect": "Allow",
+                "Action": [
+                    "iam:TagUser",
+                    "iam:ListUserTags",
+                ],
+                "Resource": "arn:aws:iam::*:user/*",  # Allow tagging ANY user for delegation
+            },
+            {
                 "Sid": "PreventTagRemovalOrModification",
                 "Effect": "Deny",
                 "Action": ["iam:UntagUser"],
