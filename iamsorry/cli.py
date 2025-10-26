@@ -8,9 +8,11 @@ import os
 import sys
 
 from .core import (
+    create_access_key_for_user,
     create_iam_user,
     credentials_need_refresh,
     encrypt_credential,
+    extract_username_prefix,
     generate_usermanager_policy,
     get_aws_account_id,
     get_aws_credentials_path,
@@ -19,6 +21,7 @@ from .core import (
     get_ssh_key_path,
     get_temp_credentials_for_user,
     get_user_tags,
+    put_user_policy,
     read_aws_credentials,
     tag_user,
     update_profile_credentials,
@@ -80,6 +83,13 @@ def main():
         metavar="OWNER",
         help="Delegate user management to another user (managers only). Creates user outside namespace (one-time only). "
         "Usage: ./iam-sorry --profile iam-sorry jimmy-bedrock --chown jimmy",
+    )
+    parser.add_argument(
+        "--create-iam-sorry",
+        metavar="USERNAME",
+        help="Create a new iam-sorry manager user with inline policy (requires IAM admin permissions). "
+        "Recommended username format: <prefix>-iam-sorry (e.g., dirk-iam-sorry). "
+        "Usage: ./iam-sorry --profile iam-admin --create-iam-sorry dirk-iam-sorry",
     )
     parser.add_argument(
         "profile_to_manage",
@@ -179,6 +189,147 @@ def main():
             sys.exit(0)
         except Exception as e:
             print(f"Error: Failed to generate policy: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Handle --create-iam-sorry flag
+    if args.create_iam_sorry:
+        import re
+
+        username = args.create_iam_sorry
+
+        # Validate username format (IAM username requirements)
+        if not re.match(r"^[a-zA-Z0-9+=,.@_-]{1,64}$", username):
+            print(
+                f"Error: Invalid IAM username format '{username}'",
+                file=sys.stderr,
+            )
+            print(
+                "IAM usernames must be 1-64 characters: a-z, A-Z, 0-9, +, =, ,, ., @, _, -",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Determine which profile to use (must have IAM admin permissions)
+        admin_profile = args.profile or os.environ.get("AWS_PROFILE")
+
+        if not admin_profile:
+            print(
+                "Error: --create-iam-sorry requires a profile with IAM admin permissions",
+                file=sys.stderr,
+            )
+            print(
+                "Usage: iam-sorry --profile <admin-profile> --create-iam-sorry <username>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # CRITICAL: Reject if using iam-sorry profile (insufficient permissions)
+        if admin_profile == "iam-sorry":
+            print(
+                "Error: Cannot use 'iam-sorry' profile to create manager users",
+                file=sys.stderr,
+            )
+            print(
+                "The 'iam-sorry' profile has restricted permissions and cannot create users or attach policies.",
+                file=sys.stderr,
+            )
+            print(
+                "Please use a profile with full IAM admin permissions (e.g., --profile iam-admin).",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        # Extract prefix from username
+        prefix = extract_username_prefix(username)
+
+        print(f"Creating iam-sorry manager user: {username}")
+        print(f"Extracted prefix: {prefix}")
+        print(f"Policy name: iam-sorry-{prefix}")
+        print()
+
+        try:
+            # Step 1: Check if user already exists
+            if verify_iam_user_exists(admin_profile, username):
+                print(
+                    f"Error: IAM user '{username}' already exists",
+                    file=sys.stderr,
+                )
+                print(
+                    "Cannot create a user that already exists. Choose a different username.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            # Step 2: Create the IAM user
+            print(f"Creating IAM user '{username}'...")
+            user_info = create_iam_user(admin_profile, username)
+            if user_info is None:
+                # Shouldn't happen since we checked above, but handle gracefully
+                print(
+                    f"Error: User '{username}' already exists",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(f"✓ IAM user '{username}' created")
+
+            # Step 3: Generate the iam-sorry policy for this prefix
+            print(f"Generating iam-sorry policy for prefix '{prefix}'...")
+            policy_document = generate_usermanager_policy(admin_profile, prefix)
+            policy_name = f"iam-sorry-{prefix}"
+
+            # Step 4: Attach inline policy
+            print(f"Attaching inline policy '{policy_name}'...")
+            put_user_policy(admin_profile, username, policy_name, policy_document)
+            print(f"✓ Inline policy '{policy_name}' attached")
+
+            # Step 5: Create access key
+            print(f"Creating access key for '{username}'...")
+            access_key = create_access_key_for_user(admin_profile, username)
+            print(f"✓ Access key created")
+            print()
+
+            # Step 6: Display credentials in .aws/credentials format
+            print("=" * 70)
+            print("CREDENTIALS (add to ~/.aws/credentials)")
+            print("=" * 70)
+            print()
+            print(f"[iam-sorry]")
+            print(f"aws_access_key_id = {access_key['AccessKeyId']}")
+            print(f"aws_secret_access_key = {access_key['SecretAccessKey']}")
+            print()
+            print("=" * 70)
+            print("IMPORTANT: Save these credentials now - they cannot be retrieved later!")
+            print("=" * 70)
+            print()
+
+            # Step 7: Display the policy JSON
+            print("=" * 70)
+            print("ATTACHED POLICY")
+            print("=" * 70)
+            print()
+            print(f"Policy Name: {policy_name}")
+            print(f"Attached to User: {username}")
+            print()
+            print(json.dumps(policy_document, indent=2))
+            print()
+
+            # Step 8: Next steps
+            print("=" * 70)
+            print("NEXT STEPS")
+            print("=" * 70)
+            print()
+            print(f"1. Copy the credentials above to ~/.aws/credentials")
+            print(f"2. Encrypt the iam-sorry profile:")
+            print(f"   $ iam-sorry --encrypt")
+            print()
+            print(f"3. Start managing users in your namespace ({prefix}-):")
+            print(f"   $ iam-sorry {prefix}-admin")
+            print(f"   $ iam-sorry {prefix}-bedrock")
+            print()
+
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: Failed to create iam-sorry manager user: {e}", file=sys.stderr)
             sys.exit(1)
 
     # Handle --eval flag to output shell export statements

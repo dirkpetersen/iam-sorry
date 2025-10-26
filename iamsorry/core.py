@@ -847,6 +847,54 @@ def create_iam_user(profile_name, username):
         raise Exception(f"Failed to create IAM user '{username}': {e}")
 
 
+def put_user_policy(profile_name, username, policy_name, policy_document):
+    """
+    Attach an inline policy to an IAM user.
+
+    Args:
+        profile_name: AWS profile to use
+        username: IAM username
+        policy_name: Name for the inline policy
+        policy_document: Policy document (dict)
+
+    Raises:
+        Exception: If policy attachment fails
+    """
+    import json
+
+    try:
+        session = create_session_with_profile(profile_name)
+        iam_client = session.client("iam")
+        iam_client.put_user_policy(
+            UserName=username, PolicyName=policy_name, PolicyDocument=json.dumps(policy_document)
+        )
+    except ClientError as e:
+        raise Exception(f"Failed to attach policy '{policy_name}' to user '{username}': {e}")
+
+
+def create_access_key_for_user(profile_name, username):
+    """
+    Create an access key for an IAM user.
+
+    Args:
+        profile_name: AWS profile to use
+        username: IAM username
+
+    Returns:
+        dict: Access key information with AccessKeyId and SecretAccessKey
+
+    Raises:
+        Exception: If access key creation fails
+    """
+    try:
+        session = create_session_with_profile(profile_name)
+        iam_client = session.client("iam")
+        response = iam_client.create_access_key(UserName=username)
+        return response["AccessKey"]
+    except ClientError as e:
+        raise Exception(f"Failed to create access key for user '{username}': {e}")
+
+
 def get_user_tags(profile_name, username):
     """
     Get tags for an IAM user.
