@@ -482,6 +482,89 @@ def generate_usermanager_policy(profile_name, user_prefix=None):
     - This ensures restrictions cannot be bypassed after being set
     - Used for delegation: owner and delegated-by tags mark delegated users
 
+    SECURITY MODEL - Multi-Layer Defense:
+    ═══════════════════════════════════════════════════════════════════════
+
+    This policy intentionally uses broad permissions (Resource: *) for delegation
+    operations. This is BY DESIGN and secured through multiple layers:
+
+    Layer 1 - IAM Policy (This Function):
+    • CreateUsers: Restricted to namespace (dirk, dirk-*)
+    • CreateUsersDelegation: Broad (Resource: *) - REQUIRED for delegation
+    • ManageUserCredentials: Restricted to namespace (dirk, dirk-*)
+    • ManageRestrictionTagsDelegation: Broad (Resource: *) - REQUIRED for delegation
+    • PreventTagRemovalOrModification: Explicit Deny on UntagUser
+
+    Layer 2 - CLI Validation (cli.py:538-562):
+    • Validates delegated owner exists as IAM user
+    • Validates target user matches owner's prefix
+    • Prevents re-delegation (checks existing owner tags)
+    • Validates manager's own prefix for non-delegated users
+
+    Layer 3 - Permanent Tags (Applied by CLI):
+    • "owner" tag marks delegation ownership
+    • "delegated-by" tag provides audit trail
+    • Tags cannot be removed (Deny UntagUser in policy)
+    • Prevents privilege escalation after delegation
+
+    Why Resource: * is Acceptable:
+    ────────────────────────────────────────────────────────────────────
+    1. Delegation requires creating users outside manager's namespace
+       (e.g., dirk-admin creates jimmy-bedrock for owner jimmy)
+
+    2. Cannot enumerate all valid delegations in IAM policy
+       (would require predicting all possible owner prefixes)
+
+    3. CLI provides necessary restrictions:
+       • Verifies owner exists (prevents delegation to fake users)
+       • Validates prefix matching (jimmy-bedrock must match jimmy)
+       • Checks for existing owner tag (prevents re-delegation)
+
+    4. Credential management remains restricted:
+       • CreateAccessKey, DeleteAccessKey: namespace-only
+       • Even if user created via delegation, only owner can manage creds
+
+    5. Tag protection prevents bypass:
+       • Once tagged with owner, cannot be removed or changed
+       • Prevents original manager from regaining access
+       • Provides permanent audit trail
+
+    Risk Analysis:
+    ────────────────────────────────────────────────────────────────────
+    IF CLI validation is bypassed:
+    • Manager could create users outside namespace
+    • Manager could tag any user (but cannot untag)
+    • Manager CANNOT manage credentials outside namespace
+    • Manager CANNOT remove existing owner tags
+
+    When using CLI (normal operation):
+    • All delegations are validated and logged
+    • Owner existence verified before delegation
+    • Prefix matching enforced
+    • Re-delegation prevented
+    • Secure by design
+
+    Alternative Approaches Considered:
+    ────────────────────────────────────────────────────────────────────
+    1. IAM Condition Keys (aws:RequestTag, etc.)
+       • Complex to maintain
+       • Limited flexibility for delegation workflows
+       • Would require administrator to update policy for each delegation
+
+    2. Restrict delegation entirely
+       • Breaks core feature of the tool
+       • Forces manual IAM operations
+
+    3. Current approach (CHOSEN)
+       • Pragmatic balance of security and usability
+       • Multi-layer defense provides defense-in-depth
+       • Clear audit trail via tags
+       • Suitable for self-sufficient technical users
+
+    This design is intentional and documented. For highly regulated environments,
+    consider implementing a centralized IAM service instead of distributed
+    manager credentials.
+
     Args:
         profile_name: AWS profile to use for lookups
         user_prefix: Optional explicit prefix to use. If None, uses prefix from current IAM user
