@@ -71,7 +71,7 @@ def main():
     )
     parser.add_argument(
         "--print-policy",
-        metavar="[USER_PREFIX]",
+        metavar="USER_PREFIX",
         nargs="?",
         const="",  # Empty string when --print-policy is used without argument
         default=None,  # None when --print-policy is not used at all
