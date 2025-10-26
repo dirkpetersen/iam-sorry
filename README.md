@@ -419,6 +419,232 @@ iam-sorry --show-decrypted usermanager
 iam-sorry --show-decrypted bedrock
 ```
 
+## Python API Usage
+
+You can use iam-sorry as a Python library in your code, providing the same functionality as the `--eval` option but programmatically.
+
+### Method 1: Direct boto3 Session (Recommended)
+
+The simplest way - creates a boto3 session with auto-decrypted credentials:
+
+```python
+from iamsorry.core import create_session_with_profile
+
+# Create a session with auto-decrypted credentials
+session = create_session_with_profile('dirk-admin')
+
+# Use with any AWS service
+s3 = session.client('s3')
+buckets = s3.list_buckets()
+
+ec2 = session.resource('ec2')
+instances = ec2.instances.all()
+
+# Works with encrypted profiles too!
+session = create_session_with_profile('iam-sorry')
+iam = session.client('iam')
+users = iam.list_users()
+```
+
+**Benefits**:
+- ✅ Automatic credential decryption (SSH key required for encrypted profiles)
+- ✅ No environment variable pollution
+- ✅ Clean, Pythonic API
+- ✅ Session-scoped credentials
+
+### Method 2: Environment Variable Injection
+
+Similar to `eval $(iam-sorry --eval profile)` but in Python:
+
+```python
+from iamsorry.core import read_aws_credentials, get_aws_credentials_path
+import os
+
+# Read and auto-decrypt credentials
+creds_file = get_aws_credentials_path()
+config = read_aws_credentials(creds_file, auto_decrypt=True)
+
+# Get profile credentials
+profile = config['dirk-admin']
+
+# Inject into environment
+os.environ['AWS_ACCESS_KEY_ID'] = profile['aws_access_key_id']
+os.environ['AWS_SECRET_ACCESS_KEY'] = profile['aws_secret_access_key']
+if 'aws_session_token' in profile:
+    os.environ['AWS_SESSION_TOKEN'] = profile['aws_session_token']
+
+# Now use with default boto3 client (uses environment)
+import boto3
+s3 = boto3.client('s3')
+s3.list_buckets()
+
+# Cleanup
+del os.environ['AWS_ACCESS_KEY_ID']
+del os.environ['AWS_SECRET_ACCESS_KEY']
+if 'AWS_SESSION_TOKEN' in os.environ:
+    del os.environ['AWS_SESSION_TOKEN']
+```
+
+**Benefits**:
+- ✅ Compatible with libraries that read from environment
+- ✅ Similar to CLI `--eval` workflow
+- ⚠️ Requires manual cleanup
+
+### Method 3: Get Credentials as Dictionary
+
+For cases where you need raw credential values:
+
+```python
+from iamsorry.core import read_aws_credentials, get_aws_credentials_path
+
+# Read credentials (auto-decrypt if encrypted)
+creds_file = get_aws_credentials_path()
+config = read_aws_credentials(creds_file, auto_decrypt=True)
+
+# Get profile as dict
+profile = config['dirk-admin']
+
+# Access individual values
+access_key = profile['aws_access_key_id']
+secret_key = profile['aws_secret_access_key']
+session_token = profile.get('aws_session_token', None)  # Optional
+expiration = profile.get('expiration', None)  # Optional
+
+# Use with custom AWS SDK wrappers or other tools
+my_custom_aws_client(access_key, secret_key, session_token)
+```
+
+### Example: Using in a Python Script
+
+```python
+#!/usr/bin/env python3
+"""
+Backup S3 buckets using iam-sorry encrypted credentials.
+"""
+
+from iamsorry.core import create_session_with_profile
+import sys
+
+def backup_buckets(profile_name, destination):
+    """Backup all S3 buckets to local destination."""
+    try:
+        # Create session with auto-decrypted credentials
+        session = create_session_with_profile(profile_name)
+        s3 = session.client('s3')
+
+        # List all buckets
+        response = s3.list_buckets()
+        buckets = response['Buckets']
+
+        print(f"Found {len(buckets)} buckets")
+
+        for bucket in buckets:
+            bucket_name = bucket['Name']
+            print(f"Backing up: {bucket_name}")
+
+            # Download bucket contents
+            # ... your backup logic here ...
+
+        print(f"✓ Backup complete: {len(buckets)} buckets")
+
+    except Exception as e:
+        print(f"Error: Failed to backup buckets: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    # Use encrypted iam-sorry profile credentials
+    backup_buckets('iam-sorry', '/backup/s3')
+```
+
+### Example: Using in a Long-Running Service
+
+```python
+#!/usr/bin/env python3
+"""
+AWS monitoring service using iam-sorry credentials with auto-refresh.
+"""
+
+from iamsorry.core import (
+    create_session_with_profile,
+    credentials_need_refresh,
+    read_aws_credentials,
+    get_aws_credentials_path,
+    get_temp_credentials_for_user,
+    update_profile_credentials
+)
+import time
+
+class AWSMonitor:
+    def __init__(self, profile_name, manager_profile='iam-sorry'):
+        self.profile_name = profile_name
+        self.manager_profile = manager_profile
+        self.session = None
+        self._refresh_session()
+
+    def _refresh_session(self):
+        """Refresh credentials if needed and create new session."""
+        creds_file = get_aws_credentials_path()
+        config = read_aws_credentials(creds_file, auto_decrypt=True)
+
+        if self.profile_name in config:
+            profile = config[self.profile_name]
+            needs_refresh, reason = credentials_need_refresh(profile, threshold_minutes=60)
+
+            if needs_refresh:
+                print(f"⚠ Refreshing credentials: {reason}")
+
+                # Get IAM username
+                iam_username = profile.get('credentials_owner')
+                if iam_username:
+                    # Refresh credentials (36 hours)
+                    new_creds = get_temp_credentials_for_user(
+                        self.manager_profile,
+                        iam_username,
+                        duration_seconds=36*3600
+                    )
+                    update_profile_credentials(
+                        self.profile_name,
+                        new_creds,
+                        iam_username
+                    )
+                    print(f"✓ Credentials refreshed")
+
+        # Create new session with (possibly refreshed) credentials
+        self.session = create_session_with_profile(self.profile_name)
+
+    def run(self):
+        """Main monitoring loop."""
+        while True:
+            try:
+                self._refresh_session()
+
+                # Do monitoring work
+                cloudwatch = self.session.client('cloudwatch')
+                # ... your monitoring logic ...
+
+                # Sleep 1 hour
+                time.sleep(3600)
+
+            except KeyboardInterrupt:
+                print("Shutting down...")
+                break
+            except Exception as e:
+                print(f"Error: {e}")
+                time.sleep(60)  # Retry after 1 minute
+
+if __name__ == '__main__':
+    monitor = AWSMonitor('dirk-monitoring')
+    monitor.run()
+```
+
+### Security Considerations for Python API
+
+- **SSH Passphrase**: When using encrypted profiles, SSH key passphrase required (unless cached in ssh-agent)
+- **Auto-Decryption**: `auto_decrypt=True` automatically decrypts credentials on read
+- **In-Memory Only**: Decrypted credentials never written back to disk
+- **Session Scoped**: Use Method 1 (direct session) to avoid environment pollution
+- **Error Handling**: Catch exceptions for missing profiles, invalid credentials, expired sessions
+
 ## Command Reference
 
 ### Global Flags

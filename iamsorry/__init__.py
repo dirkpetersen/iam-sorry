@@ -19,19 +19,23 @@ __email__ = "dirk.petersen@protonmail.com"
 __license__ = "MIT"
 
 from .core import (
+    create_access_key_for_user,
     create_iam_user,
+    create_session_with_profile,
     credentials_need_refresh,
     decrypt_credential,
     encrypt_credential,
     extract_username_prefix,
     generate_usermanager_policy,
     get_aws_account_id,
+    get_aws_config_path,
     get_aws_credentials_path,
     get_current_iam_user,
     get_iam_user_for_access_key,
     get_temp_credentials_for_user,
     get_user_tags,
     is_ssh_key_password_protected,
+    put_user_policy,
     read_aws_credentials,
     tag_user,
     update_profile_credentials,
@@ -41,23 +45,36 @@ from .core import (
 )
 
 __all__ = [
+    # Python API - Most commonly used for programmatic access
+    "create_session_with_profile",
+    "read_aws_credentials",
+    "get_aws_credentials_path",
+    "credentials_need_refresh",
+    # Encryption utilities
     "is_ssh_key_password_protected",
     "encrypt_credential",
     "decrypt_credential",
-    "extract_username_prefix",
-    "get_aws_credentials_path",
-    "read_aws_credentials",
-    "write_aws_credentials",
-    "create_iam_user",
-    "get_iam_user_for_access_key",
-    "verify_iam_user_exists",
+    # Credential management
     "get_temp_credentials_for_user",
+    "update_profile_credentials",
+    # IAM user operations
+    "create_iam_user",
+    "verify_iam_user_exists",
+    "get_current_iam_user",
+    "get_iam_user_for_access_key",
+    # IAM policy operations
+    "generate_usermanager_policy",
+    "put_user_policy",
+    "create_access_key_for_user",
+    # User tagging
     "get_user_tags",
     "tag_user",
-    "update_profile_credentials",
-    "get_current_iam_user",
-    "get_aws_account_id",
-    "generate_usermanager_policy",
+    # Username utilities
+    "extract_username_prefix",
     "validate_username_prefix",
-    "credentials_need_refresh",
+    # AWS utilities
+    "get_aws_account_id",
+    "get_aws_config_path",
+    # File operations
+    "write_aws_credentials",
 ]
