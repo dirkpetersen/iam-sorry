@@ -394,19 +394,32 @@ def get_current_iam_user(profile_name):
         error_msg = e.response.get("Error", {}).get("Message", str(e))
 
         if error_code == "InvalidClientTokenId":
-            print(f"Error: Profile '{profile_name}' has invalid or expired credentials", file=sys.stderr)
+            print(
+                f"Error: Profile '{profile_name}' has invalid or expired credentials",
+                file=sys.stderr,
+            )
             print(f"", file=sys.stderr)
             print(f"This typically means one of:", file=sys.stderr)
-            print(f"  1. The IAM user associated with these credentials was deleted", file=sys.stderr)
+            print(
+                f"  1. The IAM user associated with these credentials was deleted", file=sys.stderr
+            )
             print(f"  2. The access keys were deactivated or deleted", file=sys.stderr)
             print(f"  3. The temporary session credentials have expired", file=sys.stderr)
             print(f"  4. The AWS credentials are incorrect", file=sys.stderr)
             print(f"", file=sys.stderr)
             print(f"To fix:", file=sys.stderr)
-            print(f"  • Check your ~/.aws/credentials file for '{profile_name}' profile", file=sys.stderr)
+            print(
+                f"  • Check your ~/.aws/credentials file for '{profile_name}' profile",
+                file=sys.stderr,
+            )
             print(f"  • Verify the access key still exists in AWS IAM console", file=sys.stderr)
-            print(f"  • If using temporary credentials, check they haven't expired", file=sys.stderr)
-            print(f"  • Update credentials if needed: export AWS_ACCESS_KEY_ID=... etc", file=sys.stderr)
+            print(
+                f"  • If using temporary credentials, check they haven't expired", file=sys.stderr
+            )
+            print(
+                f"  • Update credentials if needed: export AWS_ACCESS_KEY_ID=... etc",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         # For other ClientErrors
@@ -780,6 +793,7 @@ def generate_refresh_only_policy(profile_name, user_prefix=None):
     # If user_prefix not specified, use current Unix username
     if user_prefix is None:
         import pwd
+
         try:
             user_prefix = pwd.getpwuid(os.getuid()).pw_name
         except (KeyError, OSError):
@@ -1313,7 +1327,7 @@ def update_profile_credentials(profile_name, credentials, iam_username=None, enc
     if "Expiration" in credentials:
         # Convert datetime to ISO format string for storage
         expiration = credentials["Expiration"]
-        if hasattr(expiration, 'isoformat'):
+        if hasattr(expiration, "isoformat"):
             config[profile_name]["expiration"] = expiration.isoformat()
         else:
             config[profile_name]["expiration"] = str(expiration)
@@ -1496,11 +1510,13 @@ def fix_aws_profiles():
                 # Check if source profile exists in credentials
                 if source_profile not in creds_config.sections():
                     # Source profile missing from credentials
-                    role_profiles_broken.append((
-                        profile_name,
-                        config_section,
-                        f"source profile '{source_profile}' not found in credentials"
-                    ))
+                    role_profiles_broken.append(
+                        (
+                            profile_name,
+                            config_section,
+                            f"source profile '{source_profile}' not found in credentials",
+                        )
+                    )
                 else:
                     # Check if source profile exists in config
                     if source_profile == "default":
@@ -1510,14 +1526,18 @@ def fix_aws_profiles():
 
                     if source_config_section not in config_parser:
                         # Source profile missing from config
-                        role_profiles_broken.append((
-                            profile_name,
-                            config_section,
-                            f"source profile '{source_profile}' not found in config"
-                        ))
+                        role_profiles_broken.append(
+                            (
+                                profile_name,
+                                config_section,
+                                f"source profile '{source_profile}' not found in config",
+                            )
+                        )
                     else:
                         # Role profile is OK - source exists in both files
-                        role_profiles_ok.append((profile_name, config_section, source_profile, role_arn))
+                        role_profiles_ok.append(
+                            (profile_name, config_section, source_profile, role_arn)
+                        )
             else:
                 # Not a role profile - it's orphaned
                 orphaned_profiles.append((profile_name, config_section))

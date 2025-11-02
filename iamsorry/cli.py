@@ -121,12 +121,21 @@ def try_auto_bootstrap_iam_sorry():
                     )
                     print()
                     print("This can happen if:", file=sys.stderr)
-                    print("  • The temporary credentials have expired (36+ hours old)", file=sys.stderr)
+                    print(
+                        "  • The temporary credentials have expired (36+ hours old)",
+                        file=sys.stderr,
+                    )
                     print("  • The session was revoked or invalidated", file=sys.stderr)
-                    print("  • The credentials were created in a different AWS account", file=sys.stderr)
+                    print(
+                        "  • The credentials were created in a different AWS account",
+                        file=sys.stderr,
+                    )
                     print()
                     print("Solution:", file=sys.stderr)
-                    print("  Contact your administrator for fresh temporary credentials.", file=sys.stderr)
+                    print(
+                        "  Contact your administrator for fresh temporary credentials.",
+                        file=sys.stderr,
+                    )
                     print("  Then re-export them and run: iam-sorry", file=sys.stderr)
                 else:
                     print(f"Error: Failed to verify credentials ({error_code})", file=sys.stderr)
@@ -150,6 +159,7 @@ def try_auto_bootstrap_iam_sorry():
             # Create access key with retry logic for eventual consistency
             print("Creating new permanent access key...")
             import time
+
             iam_client = session.client("iam")
 
             max_retries = 5
@@ -165,7 +175,9 @@ def try_auto_bootstrap_iam_sorry():
                     retry_code = retry_error.response["Error"]["Code"]
                     if retry_code == "InvalidClientTokenId" and attempt < max_retries - 1:
                         # Temporary credentials not yet propagated in IAM
-                        print(f"⏳ Waiting {retry_delay}s for credential propagation (attempt {attempt + 1}/{max_retries})...")
+                        print(
+                            f"⏳ Waiting {retry_delay}s for credential propagation (attempt {attempt + 1}/{max_retries})..."
+                        )
                         time.sleep(retry_delay)
                         retry_delay *= 1.5  # Exponential backoff
                     else:
@@ -192,13 +204,20 @@ def try_auto_bootstrap_iam_sorry():
                 print("This can happen if:", file=sys.stderr)
                 print("  • The temporary credentials have expired (36+ hours old)", file=sys.stderr)
                 print("  • The session was revoked or invalidated", file=sys.stderr)
-                print("  • The credentials were created in a different AWS account", file=sys.stderr)
+                print(
+                    "  • The credentials were created in a different AWS account", file=sys.stderr
+                )
                 print()
                 print("Solution:", file=sys.stderr)
-                print("  Contact your administrator for fresh temporary credentials.", file=sys.stderr)
+                print(
+                    "  Contact your administrator for fresh temporary credentials.", file=sys.stderr
+                )
                 print("  Then re-export them and run: iam-sorry", file=sys.stderr)
                 print()
-                print("  Alternatively, if you have permanent credentials (AKIA*), use those instead.", file=sys.stderr)
+                print(
+                    "  Alternatively, if you have permanent credentials (AKIA*), use those instead.",
+                    file=sys.stderr,
+                )
             elif error_code == "AccessDenied":
                 print(f"Error: Cannot create access key - permission denied", file=sys.stderr)
                 print(
@@ -207,13 +226,22 @@ def try_auto_bootstrap_iam_sorry():
                 )
                 print()
                 print("This can happen if:", file=sys.stderr)
-                print(f"  • The user '{current_username}' doesn't have iam:CreateAccessKey for itself", file=sys.stderr)
-                print("  • The temporary credentials were created without sufficient permissions", file=sys.stderr)
+                print(
+                    f"  • The user '{current_username}' doesn't have iam:CreateAccessKey for itself",
+                    file=sys.stderr,
+                )
+                print(
+                    "  • The temporary credentials were created without sufficient permissions",
+                    file=sys.stderr,
+                )
                 print()
                 print("Solution:", file=sys.stderr)
                 print("  Contact your administrator to:", file=sys.stderr)
                 print("  1. Ensure the user has iam:CreateAccessKey permission", file=sys.stderr)
-                print("  2. Generate fresh temporary credentials with this permission", file=sys.stderr)
+                print(
+                    "  2. Generate fresh temporary credentials with this permission",
+                    file=sys.stderr,
+                )
                 print("  3. Or provide permanent credentials (AKIA) instead", file=sys.stderr)
             else:
                 print(f"Error: Failed to create access key ({error_code})", file=sys.stderr)
@@ -226,15 +254,17 @@ def try_auto_bootstrap_iam_sorry():
     else:
         print(f"Environment credentials: PERMANENT (will rotate after bootstrap)")
         print()
-        print("For security, will attempt to create new permanent credentials and disable admin-provided ones...")
+        print(
+            "For security, will attempt to create new permanent credentials and disable admin-provided ones..."
+        )
         print("(Note: If rotation fails, the admin-provided credentials will be used directly.)")
 
         # Try to create new permanent credentials to replace the admin-provided ones
         try:
             import boto3
+
             session = boto3.Session(
-                aws_access_key_id=env_access_key,
-                aws_secret_access_key=env_secret_key
+                aws_access_key_id=env_access_key, aws_secret_access_key=env_secret_key
             )
 
             # Get current user
@@ -243,7 +273,10 @@ def try_auto_bootstrap_iam_sorry():
             arn = identity["Arn"]
 
             if ":user/" not in arn:
-                print(f"Warning: Cannot rotate credentials for non-user identity: {arn}", file=sys.stderr)
+                print(
+                    f"Warning: Cannot rotate credentials for non-user identity: {arn}",
+                    file=sys.stderr,
+                )
                 print("Will use admin-provided credentials directly.", file=sys.stderr)
                 final_access_key = env_access_key
                 final_secret_key = env_secret_key
@@ -265,6 +298,7 @@ def try_auto_bootstrap_iam_sorry():
                 # Test the new key works before deleting the old one
                 print("Testing new access key...")
                 import time
+
                 test_passed = False
                 max_retries = 5
                 retry_delay = 2
@@ -273,7 +307,7 @@ def try_auto_bootstrap_iam_sorry():
                     try:
                         test_session = boto3.Session(
                             aws_access_key_id=new_access_key_id,
-                            aws_secret_access_key=new_secret_key
+                            aws_secret_access_key=new_secret_key,
                         )
                         test_sts = test_session.client("sts")
                         test_identity = test_sts.get_caller_identity()
@@ -282,19 +316,23 @@ def try_auto_bootstrap_iam_sorry():
                         break
                     except Exception as test_error:
                         if attempt < max_retries - 1:
-                            print(f"  ⏳ Waiting {retry_delay}s for key propagation (attempt {attempt + 1}/{max_retries})...")
+                            print(
+                                f"  ⏳ Waiting {retry_delay}s for key propagation (attempt {attempt + 1}/{max_retries})..."
+                            )
                             time.sleep(retry_delay)
                             retry_delay *= 1.5
                         else:
-                            print(f"Error: New access key failed verification: {test_error}", file=sys.stderr)
+                            print(
+                                f"Error: New access key failed verification: {test_error}",
+                                file=sys.stderr,
+                            )
 
                 if not test_passed:
                     # New key doesn't work, delete it and keep using the old one
                     print("Cleaning up failed new access key...")
                     try:
                         iam_client.delete_access_key(
-                            UserName=current_username,
-                            AccessKeyId=new_access_key_id
+                            UserName=current_username, AccessKeyId=new_access_key_id
                         )
                         print("✓ Failed access key cleaned up")
                     except:
@@ -308,26 +346,38 @@ def try_auto_bootstrap_iam_sorry():
                         # First try to disable the old key (safer - can be re-enabled if needed)
                         print(f"Disabling admin-provided access key: {env_access_key[:10]}***")
                         iam_client.update_access_key(
-                            UserName=current_username,
-                            AccessKeyId=env_access_key,
-                            Status='Inactive'
+                            UserName=current_username, AccessKeyId=env_access_key, Status="Inactive"
                         )
                         print(f"✓ Admin-provided access key disabled (status: Inactive)")
-                        print(f"  Note: The old key still exists but is disabled. Delete it manually if not needed.")
-                        print(f"  AWS Console: IAM → Users → {current_username} → Security credentials")
+                        print(
+                            f"  Note: The old key still exists but is disabled. Delete it manually if not needed."
+                        )
+                        print(
+                            f"  AWS Console: IAM → Users → {current_username} → Security credentials"
+                        )
                     except Exception as disable_error:
                         # If we can't disable, try to delete
                         try:
-                            print(f"Could not disable, attempting to delete old access key: {env_access_key[:10]}***")
+                            print(
+                                f"Could not disable, attempting to delete old access key: {env_access_key[:10]}***"
+                            )
                             iam_client.delete_access_key(
-                                UserName=current_username,
-                                AccessKeyId=env_access_key
+                                UserName=current_username, AccessKeyId=env_access_key
                             )
                             print(f"✓ Admin-provided access key deleted")
                         except Exception as delete_error:
-                            print(f"Warning: Could not disable or delete old access key: {delete_error}", file=sys.stderr)
-                            print("You should manually disable/delete it for security.", file=sys.stderr)
-                            print(f"AWS Console: IAM → Users → {current_username} → Security credentials", file=sys.stderr)
+                            print(
+                                f"Warning: Could not disable or delete old access key: {delete_error}",
+                                file=sys.stderr,
+                            )
+                            print(
+                                "You should manually disable/delete it for security.",
+                                file=sys.stderr,
+                            )
+                            print(
+                                f"AWS Console: IAM → Users → {current_username} → Security credentials",
+                                file=sys.stderr,
+                            )
 
                     final_access_key = new_access_key_id
                     final_secret_key = new_secret_key
@@ -340,7 +390,10 @@ def try_auto_bootstrap_iam_sorry():
             print("  • The IAM user has been deleted or disabled", file=sys.stderr)
             print("  • Access keys were revoked or removed", file=sys.stderr)
             print()
-            print("SOLUTION: Contact your system administrator to provide fresh credentials.", file=sys.stderr)
+            print(
+                "SOLUTION: Contact your system administrator to provide fresh credentials.",
+                file=sys.stderr,
+            )
             print("The bootstrap cannot proceed without valid credentials.", file=sys.stderr)
             print()
             return False
@@ -450,6 +503,7 @@ def try_auto_bootstrap_iam_sorry():
 
     try:
         import boto3
+
         # Create a temporary session with the newly bootstrapped credentials
         bootstrap_session = create_session_with_profile("iam-sorry")
         sts_client = bootstrap_session.client("sts")
@@ -478,31 +532,36 @@ def try_auto_bootstrap_iam_sorry():
                     # Step 1: Create temporary access key for base user
                     print(f"  Creating temporary access key for '{base_username}'...")
                     base_access_key = create_access_key_for_user("iam-sorry", base_username)
-                    print(f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***")
+                    print(
+                        f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***"
+                    )
 
                     # Step 2: Use base user credentials to call GetSessionToken AS the base user
                     base_user_session = boto3.Session(
-                        aws_access_key_id=base_access_key['AccessKeyId'],
-                        aws_secret_access_key=base_access_key['SecretAccessKey']
+                        aws_access_key_id=base_access_key["AccessKeyId"],
+                        aws_secret_access_key=base_access_key["SecretAccessKey"],
                     )
 
                     # Retry with exponential backoff for propagation delays
                     import time
+
                     max_retries = 5
                     retry_delay = 2
                     temp_creds = None
 
                     for attempt in range(max_retries):
                         try:
-                            base_sts = base_user_session.client('sts')
+                            base_sts = base_user_session.client("sts")
                             response = base_sts.get_session_token(DurationSeconds=36 * 3600)
-                            temp_creds = response['Credentials']
+                            temp_creds = response["Credentials"]
                             print(f"  ✓ Session token generated for '{base_username}'")
                             break
                         except ClientError as e:
-                            error_code = e.response['Error']['Code']
-                            if error_code == 'InvalidClientTokenId' and attempt < max_retries - 1:
-                                print(f"  ⏳ Waiting {retry_delay}s for access key propagation (attempt {attempt + 1}/{max_retries})...")
+                            error_code = e.response["Error"]["Code"]
+                            if error_code == "InvalidClientTokenId" and attempt < max_retries - 1:
+                                print(
+                                    f"  ⏳ Waiting {retry_delay}s for access key propagation (attempt {attempt + 1}/{max_retries})..."
+                                )
                                 time.sleep(retry_delay)
                                 retry_delay *= 1.5
                             else:
@@ -513,10 +572,9 @@ def try_auto_bootstrap_iam_sorry():
 
                     # Step 3: Delete the temporary access key
                     print(f"  Deleting temporary access key...")
-                    iam_client = bootstrap_session.client('iam')
+                    iam_client = bootstrap_session.client("iam")
                     iam_client.delete_access_key(
-                        UserName=base_username,
-                        AccessKeyId=base_access_key['AccessKeyId']
+                        UserName=base_username, AccessKeyId=base_access_key["AccessKeyId"]
                     )
                     print(f"  ✓ Temporary access key deleted")
 
@@ -525,8 +583,14 @@ def try_auto_bootstrap_iam_sorry():
                     print(f"✓ Credentials generated for '{base_username}'")
 
                 except Exception as cred_error:
-                    print(f"⚠ Warning: Could not generate credentials for '{base_username}': {cred_error}", file=sys.stderr)
-                    print(f"You can generate them later with: iam-sorry {base_username}", file=sys.stderr)
+                    print(
+                        f"⚠ Warning: Could not generate credentials for '{base_username}': {cred_error}",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"You can generate them later with: iam-sorry {base_username}",
+                        file=sys.stderr,
+                    )
             else:
                 print(f"✓ Base user '{base_username}' already exists")
 
@@ -540,46 +604,56 @@ def try_auto_bootstrap_iam_sorry():
                     try:
                         # Same credential generation logic as above
                         base_access_key = create_access_key_for_user("iam-sorry", base_username)
-                        print(f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***")
+                        print(
+                            f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***"
+                        )
 
                         base_user_session = boto3.Session(
-                            aws_access_key_id=base_access_key['AccessKeyId'],
-                            aws_secret_access_key=base_access_key['SecretAccessKey']
+                            aws_access_key_id=base_access_key["AccessKeyId"],
+                            aws_secret_access_key=base_access_key["SecretAccessKey"],
                         )
 
                         import time
+
                         max_retries = 5
                         retry_delay = 2
                         temp_creds = None
 
                         for attempt in range(max_retries):
                             try:
-                                base_sts = base_user_session.client('sts')
+                                base_sts = base_user_session.client("sts")
                                 response = base_sts.get_session_token(DurationSeconds=36 * 3600)
-                                temp_creds = response['Credentials']
+                                temp_creds = response["Credentials"]
                                 print(f"  ✓ Session token generated")
                                 break
                             except ClientError as e:
-                                error_code = e.response['Error']['Code']
-                                if error_code == 'InvalidClientTokenId' and attempt < max_retries - 1:
-                                    print(f"  ⏳ Waiting {retry_delay}s for propagation (attempt {attempt + 1}/{max_retries})...")
+                                error_code = e.response["Error"]["Code"]
+                                if (
+                                    error_code == "InvalidClientTokenId"
+                                    and attempt < max_retries - 1
+                                ):
+                                    print(
+                                        f"  ⏳ Waiting {retry_delay}s for propagation (attempt {attempt + 1}/{max_retries})..."
+                                    )
                                     time.sleep(retry_delay)
                                     retry_delay *= 1.5
                                 else:
                                     raise
 
                         if temp_creds:
-                            iam_client = bootstrap_session.client('iam')
+                            iam_client = bootstrap_session.client("iam")
                             iam_client.delete_access_key(
-                                UserName=base_username,
-                                AccessKeyId=base_access_key['AccessKeyId']
+                                UserName=base_username, AccessKeyId=base_access_key["AccessKeyId"]
                             )
                             print(f"  ✓ Temporary access key deleted")
 
                             update_profile_credentials(base_username, temp_creds, base_username)
                             print(f"  ✓ Credentials stored in profile '{base_username}'")
                     except Exception as cred_error:
-                        print(f"  ⚠ Warning: Could not generate credentials: {cred_error}", file=sys.stderr)
+                        print(
+                            f"  ⚠ Warning: Could not generate credentials: {cred_error}",
+                            file=sys.stderr,
+                        )
     except Exception as e:
         print(f"⚠ Warning: Could not create base user: {e}", file=sys.stderr)
         print("You can create it later with: iam-sorry <base-username>", file=sys.stderr)
@@ -624,14 +698,14 @@ def print_policy_setup_instructions(user_prefix):
     print()
     print("# OPTION 1 (AUTOMATED): If you have IAM admin access")
     print("# ─────────────────────────────────────────────────────────────────────")
-    print(
-        f"#   $ iam-sorry --profile <admin-profile> --create-iam-sorry {user_prefix}-iam-sorry"
-    )
+    print(f"#   $ iam-sorry --profile <admin-profile> --create-iam-sorry {user_prefix}-iam-sorry")
     print("#")
     print("#   This will automatically:")
     print(f"#   • Create IAM user '{user_prefix}-iam-sorry' (manager)")
     print(f"#   • Attach inline policy 'iam-sorry-{user_prefix}'")
-    print(f"#   • Policy allows creating users and roles in namespace ({user_prefix}, {user_prefix}-*)")
+    print(
+        f"#   • Policy allows creating users and roles in namespace ({user_prefix}, {user_prefix}-*)"
+    )
     print("#   • Create access key")
     print("#   • Display credentials in .aws/credentials format")
     print()
@@ -648,9 +722,7 @@ def print_policy_setup_instructions(user_prefix):
     print("#    c) Click: 'Add Permissions' → 'Create Inline Policy'")
     print("#    d) Select tab: 'JSON'")
     print("#    e) Clear the default policy and paste the JSON policy above")
-    print(
-        f"#    f) Click: 'Review Policy' → Name: 'iam-sorry-{user_prefix}' → 'Create Policy'"
-    )
+    print(f"#    f) Click: 'Review Policy' → Name: 'iam-sorry-{user_prefix}' → 'Create Policy'")
     print()
     print("# 3. Provide the new IAM user with:")
     print("#    - AWS Access Key ID")
@@ -817,7 +889,10 @@ def main():
             sys.exit(0)
         elif bootstrap_result is False:
             # Bootstrap was attempted but failed - exit now
-            print("\n⚠ Auto-bootstrap failed. Cannot proceed without valid credentials.", file=sys.stderr)
+            print(
+                "\n⚠ Auto-bootstrap failed. Cannot proceed without valid credentials.",
+                file=sys.stderr,
+            )
             print()
             print("To use iam-sorry, you need either:", file=sys.stderr)
             print("  1. An existing [iam-sorry] profile in ~/.aws/credentials", file=sys.stderr)
@@ -849,6 +924,7 @@ def main():
 
             try:
                 import boto3
+
                 manager_profile = "iam-sorry"
                 bootstrap_session = create_session_with_profile(manager_profile)
                 sts_client = bootstrap_session.client("sts")
@@ -874,45 +950,56 @@ def main():
                         try:
                             # Create temporary access key for base user
                             print(f"  Creating temporary access key for '{base_username}'...")
-                            base_access_key = create_access_key_for_user(manager_profile, base_username)
-                            print(f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***")
+                            base_access_key = create_access_key_for_user(
+                                manager_profile, base_username
+                            )
+                            print(
+                                f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***"
+                            )
 
                             # Use base user credentials to call GetSessionToken AS the base user
                             base_user_session = boto3.Session(
-                                aws_access_key_id=base_access_key['AccessKeyId'],
-                                aws_secret_access_key=base_access_key['SecretAccessKey']
+                                aws_access_key_id=base_access_key["AccessKeyId"],
+                                aws_secret_access_key=base_access_key["SecretAccessKey"],
                             )
 
                             import time
+
                             max_retries = 5
                             retry_delay = 2
                             temp_creds = None
 
                             for attempt in range(max_retries):
                                 try:
-                                    base_sts = base_user_session.client('sts')
+                                    base_sts = base_user_session.client("sts")
                                     response = base_sts.get_session_token(DurationSeconds=36 * 3600)
-                                    temp_creds = response['Credentials']
+                                    temp_creds = response["Credentials"]
                                     print(f"  ✓ Session token generated for '{base_username}'")
                                     break
                                 except ClientError as e:
-                                    error_code = e.response['Error']['Code']
-                                    if error_code == 'InvalidClientTokenId' and attempt < max_retries - 1:
-                                        print(f"  ⏳ Waiting {retry_delay}s for access key propagation (attempt {attempt + 1}/{max_retries})...")
+                                    error_code = e.response["Error"]["Code"]
+                                    if (
+                                        error_code == "InvalidClientTokenId"
+                                        and attempt < max_retries - 1
+                                    ):
+                                        print(
+                                            f"  ⏳ Waiting {retry_delay}s for access key propagation (attempt {attempt + 1}/{max_retries})..."
+                                        )
                                         time.sleep(retry_delay)
                                         retry_delay *= 1.5
                                     else:
                                         raise
 
                             if temp_creds is None:
-                                raise Exception("Failed to generate session token after multiple retries")
+                                raise Exception(
+                                    "Failed to generate session token after multiple retries"
+                                )
 
                             # Delete the temporary access key
                             print(f"  Deleting temporary access key...")
-                            iam_client = bootstrap_session.client('iam')
+                            iam_client = bootstrap_session.client("iam")
                             iam_client.delete_access_key(
-                                UserName=base_username,
-                                AccessKeyId=base_access_key['AccessKeyId']
+                                UserName=base_username, AccessKeyId=base_access_key["AccessKeyId"]
                             )
                             print(f"  ✓ Temporary access key deleted")
 
@@ -921,8 +1008,14 @@ def main():
                             print(f"✓ Credentials generated for '{base_username}'")
 
                         except Exception as cred_error:
-                            print(f"⚠ Warning: Could not generate credentials for '{base_username}': {cred_error}", file=sys.stderr)
-                            print(f"You can generate them later with: iam-sorry {base_username}", file=sys.stderr)
+                            print(
+                                f"⚠ Warning: Could not generate credentials for '{base_username}': {cred_error}",
+                                file=sys.stderr,
+                            )
+                            print(
+                                f"You can generate them later with: iam-sorry {base_username}",
+                                file=sys.stderr,
+                            )
                     else:
                         print(f"✓ Base user '{base_username}' already exists")
 
@@ -934,47 +1027,64 @@ def main():
                             print(f"  Base user has no credentials, generating them...")
 
                             try:
-                                base_access_key = create_access_key_for_user(manager_profile, base_username)
-                                print(f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***")
+                                base_access_key = create_access_key_for_user(
+                                    manager_profile, base_username
+                                )
+                                print(
+                                    f"  ✓ Temporary access key created: {base_access_key['AccessKeyId'][:10]}***"
+                                )
 
                                 base_user_session = boto3.Session(
-                                    aws_access_key_id=base_access_key['AccessKeyId'],
-                                    aws_secret_access_key=base_access_key['SecretAccessKey']
+                                    aws_access_key_id=base_access_key["AccessKeyId"],
+                                    aws_secret_access_key=base_access_key["SecretAccessKey"],
                                 )
 
                                 import time
+
                                 max_retries = 5
                                 retry_delay = 2
                                 temp_creds = None
 
                                 for attempt in range(max_retries):
                                     try:
-                                        base_sts = base_user_session.client('sts')
-                                        response = base_sts.get_session_token(DurationSeconds=36 * 3600)
-                                        temp_creds = response['Credentials']
+                                        base_sts = base_user_session.client("sts")
+                                        response = base_sts.get_session_token(
+                                            DurationSeconds=36 * 3600
+                                        )
+                                        temp_creds = response["Credentials"]
                                         print(f"  ✓ Session token generated")
                                         break
                                     except ClientError as e:
-                                        error_code = e.response['Error']['Code']
-                                        if error_code == 'InvalidClientTokenId' and attempt < max_retries - 1:
-                                            print(f"  ⏳ Waiting {retry_delay}s for propagation (attempt {attempt + 1}/{max_retries})...")
+                                        error_code = e.response["Error"]["Code"]
+                                        if (
+                                            error_code == "InvalidClientTokenId"
+                                            and attempt < max_retries - 1
+                                        ):
+                                            print(
+                                                f"  ⏳ Waiting {retry_delay}s for propagation (attempt {attempt + 1}/{max_retries})..."
+                                            )
                                             time.sleep(retry_delay)
                                             retry_delay *= 1.5
                                         else:
                                             raise
 
                                 if temp_creds:
-                                    iam_client = bootstrap_session.client('iam')
+                                    iam_client = bootstrap_session.client("iam")
                                     iam_client.delete_access_key(
                                         UserName=base_username,
-                                        AccessKeyId=base_access_key['AccessKeyId']
+                                        AccessKeyId=base_access_key["AccessKeyId"],
                                     )
                                     print(f"  ✓ Temporary access key deleted")
 
-                                    update_profile_credentials(base_username, temp_creds, base_username)
+                                    update_profile_credentials(
+                                        base_username, temp_creds, base_username
+                                    )
                                     print(f"  ✓ Credentials stored in profile '{base_username}'")
                             except Exception as cred_error:
-                                print(f"  ⚠ Warning: Could not generate credentials: {cred_error}", file=sys.stderr)
+                                print(
+                                    f"  ⚠ Warning: Could not generate credentials: {cred_error}",
+                                    file=sys.stderr,
+                                )
             except Exception as e:
                 print(f"⚠ Warning: Could not check/create base user: {e}", file=sys.stderr)
 
@@ -995,9 +1105,13 @@ def main():
             print(f"    → Creates base user '{base_username}' if needed")
             print(f"    → Creates IAM role 'iam-sorry-{base_username}-admin'")
             print("    → Creates profile for role assumption")
-            print(f"    → Profile: ~/.aws/config [profile {base_username}-admin] with role_arn + source_profile")
+            print(
+                f"    → Profile: ~/.aws/config [profile {base_username}-admin] with role_arn + source_profile"
+            )
             print()
-            print(f"  iam-sorry {base_username}-bedrock        # Same pattern for different roles/services")
+            print(
+                f"  iam-sorry {base_username}-bedrock        # Same pattern for different roles/services"
+            )
             print()
             print("=" * 70)
             print("OTHER OPERATIONS")
@@ -1011,7 +1125,9 @@ def main():
             print("  iam-sorry --print-policy       # Show policy for your namespace")
             print("  iam-sorry --encrypt            # Encrypt iam-sorry profile credentials")
             print("  iam-sorry --reset              # Remove iam-sorry profile (for re-bootstrap)")
-            print("  iam-sorry --fix-profiles       # Ensure all profiles in config match credentials")
+            print(
+                "  iam-sorry --fix-profiles       # Ensure all profiles in config match credentials"
+            )
             print()
             sys.exit(0)
 
@@ -1198,9 +1314,14 @@ def main():
 
             role_arn = config_parser[profile_section].get("role_arn")
             if not role_arn:
-                print(f"Error: Profile '{profile_name}' is not a role profile (no role_arn)", file=sys.stderr)
+                print(
+                    f"Error: Profile '{profile_name}' is not a role profile (no role_arn)",
+                    file=sys.stderr,
+                )
                 print("This command only works with role profiles.", file=sys.stderr)
-                print(f"Create a role profile with: iam-sorry <prefix>-<role-name>", file=sys.stderr)
+                print(
+                    f"Create a role profile with: iam-sorry <prefix>-<role-name>", file=sys.stderr
+                )
                 sys.exit(1)
 
             # Extract role name and account from ARN
@@ -1264,17 +1385,15 @@ def main():
                         "lambda:CreateFunctionUrlConfig",
                         "lambda:DeleteFunctionUrlConfig",
                         "lambda:UpdateFunctionUrlConfig",
-                        "lambda:GetFunctionUrlConfig"
+                        "lambda:GetFunctionUrlConfig",
                     ],
-                    "Resource": f"arn:aws:lambda:*:{account_id}:function:*"
+                    "Resource": f"arn:aws:lambda:*:{account_id}:function:*",
                 },
                 {
                     "Sid": "LambdaServiceOperations",
                     "Effect": "Allow",
-                    "Action": [
-                        "lambda:ListFunctions"
-                    ],
-                    "Resource": "*"
+                    "Action": ["lambda:ListFunctions"],
+                    "Resource": "*",
                 },
                 {
                     "Sid": "LambdaLayerManagement",
@@ -1284,9 +1403,9 @@ def main():
                         "lambda:DeleteLayerVersion",
                         "lambda:GetLayerVersion",
                         "lambda:ListLayerVersions",
-                        "lambda:ListLayers"
+                        "lambda:ListLayers",
                     ],
-                    "Resource": "*"
+                    "Resource": "*",
                 },
                 {
                     "Sid": "CloudFrontManagement",
@@ -1307,9 +1426,9 @@ def main():
                         "cloudfront:CreateOriginAccessControl",
                         "cloudfront:GetOriginAccessControl",
                         "cloudfront:DeleteOriginAccessControl",
-                        "cloudfront:UpdateOriginAccessControl"
+                        "cloudfront:UpdateOriginAccessControl",
                     ],
-                    "Resource": "*"
+                    "Resource": "*",
                 },
                 {
                     "Sid": "ACMCertificateManagement",
@@ -1322,9 +1441,9 @@ def main():
                         "acm:DeleteCertificate",
                         "acm:AddTagsToCertificate",
                         "acm:ListTagsForCertificate",
-                        "acm:RemoveTagsFromCertificate"
+                        "acm:RemoveTagsFromCertificate",
                     ],
-                    "Resource": "*"
+                    "Resource": "*",
                 },
                 {
                     "Sid": "Route53Management",
@@ -1334,20 +1453,16 @@ def main():
                         "route53:GetHostedZone",
                         "route53:ListResourceRecordSets",
                         "route53:ChangeResourceRecordSets",
-                        "route53:GetChange"
+                        "route53:GetChange",
                     ],
-                    "Resource": "*"
+                    "Resource": "*",
                 },
                 {
                     "Sid": "IAMPassRoleForLambda",
                     "Effect": "Allow",
                     "Action": "iam:PassRole",
                     "Resource": f"arn:aws:iam::{account_id}:role/*",
-                    "Condition": {
-                        "StringEquals": {
-                            "iam:PassedToService": "lambda.amazonaws.com"
-                        }
-                    }
+                    "Condition": {"StringEquals": {"iam:PassedToService": "lambda.amazonaws.com"}},
                 },
                 {
                     "Sid": "IAMReadOnlyForRoles",
@@ -1356,111 +1471,115 @@ def main():
                         "iam:GetRole",
                         "iam:ListRoles",
                         "iam:ListRolePolicies",
-                        "iam:GetRolePolicy"
+                        "iam:GetRolePolicy",
                     ],
-                    "Resource": "*"
-                }
-            ]
+                    "Resource": "*",
+                },
+            ],
         }
 
         # Add S3 and DynamoDB statements if namespace prefix is available
         if prefix:
             # S3 Bucket Operations (namespace-restricted)
-            lambda_policy["Statement"].append({
-                "Sid": "S3BucketManagement",
-                "Effect": "Allow",
-                "Action": [
-                    "s3:CreateBucket",
-                    "s3:DeleteBucket",
-                    "s3:ListBucket",
-                    "s3:GetBucketLocation",
-                    "s3:GetBucketVersioning",
-                    "s3:PutBucketVersioning",
-                    "s3:GetBucketCORS",
-                    "s3:PutBucketCORS",
-                    "s3:GetBucketWebsite",
-                    "s3:PutBucketWebsite",
-                    "s3:DeleteBucketWebsite",
-                    "s3:GetBucketPolicy",
-                    "s3:PutBucketPolicy",
-                    "s3:DeleteBucketPolicy",
-                    "s3:GetBucketTagging",
-                    "s3:PutBucketTagging"
-                ],
-                "Resource": f"arn:aws:s3:::{prefix}-*"
-            })
+            lambda_policy["Statement"].append(
+                {
+                    "Sid": "S3BucketManagement",
+                    "Effect": "Allow",
+                    "Action": [
+                        "s3:CreateBucket",
+                        "s3:DeleteBucket",
+                        "s3:ListBucket",
+                        "s3:GetBucketLocation",
+                        "s3:GetBucketVersioning",
+                        "s3:PutBucketVersioning",
+                        "s3:GetBucketCORS",
+                        "s3:PutBucketCORS",
+                        "s3:GetBucketWebsite",
+                        "s3:PutBucketWebsite",
+                        "s3:DeleteBucketWebsite",
+                        "s3:GetBucketPolicy",
+                        "s3:PutBucketPolicy",
+                        "s3:DeleteBucketPolicy",
+                        "s3:GetBucketTagging",
+                        "s3:PutBucketTagging",
+                    ],
+                    "Resource": f"arn:aws:s3:::{prefix}-*",
+                }
+            )
 
             # S3 Object Operations (namespace-restricted)
-            lambda_policy["Statement"].append({
-                "Sid": "S3ObjectManagement",
-                "Effect": "Allow",
-                "Action": [
-                    "s3:GetObject",
-                    "s3:PutObject",
-                    "s3:DeleteObject",
-                    "s3:GetObjectVersion",
-                    "s3:DeleteObjectVersion",
-                    "s3:GetObjectAttributes",
-                    "s3:PutObjectAcl",
-                    "s3:GetObjectAcl",
-                    "s3:ListMultipartUploadParts",
-                    "s3:AbortMultipartUpload"
-                ],
-                "Resource": f"arn:aws:s3:::{prefix}-*/*"
-            })
+            lambda_policy["Statement"].append(
+                {
+                    "Sid": "S3ObjectManagement",
+                    "Effect": "Allow",
+                    "Action": [
+                        "s3:GetObject",
+                        "s3:PutObject",
+                        "s3:DeleteObject",
+                        "s3:GetObjectVersion",
+                        "s3:DeleteObjectVersion",
+                        "s3:GetObjectAttributes",
+                        "s3:PutObjectAcl",
+                        "s3:GetObjectAcl",
+                        "s3:ListMultipartUploadParts",
+                        "s3:AbortMultipartUpload",
+                    ],
+                    "Resource": f"arn:aws:s3:::{prefix}-*/*",
+                }
+            )
 
             # S3 Service-level Operations (read-only, needed for AWS CLI/SDK)
-            lambda_policy["Statement"].append({
-                "Sid": "S3ServiceOperations",
-                "Effect": "Allow",
-                "Action": [
-                    "s3:ListAllMyBuckets",
-                    "s3:GetBucketLocation"
-                ],
-                "Resource": "*"
-            })
+            lambda_policy["Statement"].append(
+                {
+                    "Sid": "S3ServiceOperations",
+                    "Effect": "Allow",
+                    "Action": ["s3:ListAllMyBuckets", "s3:GetBucketLocation"],
+                    "Resource": "*",
+                }
+            )
 
             # DynamoDB Table Operations (namespace-restricted)
-            lambda_policy["Statement"].append({
-                "Sid": "DynamoDBTableManagement",
-                "Effect": "Allow",
-                "Action": [
-                    "dynamodb:CreateTable",
-                    "dynamodb:DeleteTable",
-                    "dynamodb:DescribeTable",
-                    "dynamodb:UpdateTable",
-                    "dynamodb:GetItem",
-                    "dynamodb:PutItem",
-                    "dynamodb:UpdateItem",
-                    "dynamodb:DeleteItem",
-                    "dynamodb:Query",
-                    "dynamodb:Scan",
-                    "dynamodb:BatchGetItem",
-                    "dynamodb:BatchWriteItem",
-                    "dynamodb:ConditionCheckItem",
-                    "dynamodb:DescribeTimeToLive",
-                    "dynamodb:UpdateTimeToLive",
-                    "dynamodb:TagResource",
-                    "dynamodb:UntagResource",
-                    "dynamodb:ListTagsOfResource"
-                ],
-                "Resource": [
-                    f"arn:aws:dynamodb:*:{account_id}:table/{prefix}-*",
-                    f"arn:aws:dynamodb:*:{account_id}:table/{prefix}-*/index/*",
-                    f"arn:aws:dynamodb:*:{account_id}:table/{prefix}-*/stream/*"
-                ]
-            })
+            lambda_policy["Statement"].append(
+                {
+                    "Sid": "DynamoDBTableManagement",
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:CreateTable",
+                        "dynamodb:DeleteTable",
+                        "dynamodb:DescribeTable",
+                        "dynamodb:UpdateTable",
+                        "dynamodb:GetItem",
+                        "dynamodb:PutItem",
+                        "dynamodb:UpdateItem",
+                        "dynamodb:DeleteItem",
+                        "dynamodb:Query",
+                        "dynamodb:Scan",
+                        "dynamodb:BatchGetItem",
+                        "dynamodb:BatchWriteItem",
+                        "dynamodb:ConditionCheckItem",
+                        "dynamodb:DescribeTimeToLive",
+                        "dynamodb:UpdateTimeToLive",
+                        "dynamodb:TagResource",
+                        "dynamodb:UntagResource",
+                        "dynamodb:ListTagsOfResource",
+                    ],
+                    "Resource": [
+                        f"arn:aws:dynamodb:*:{account_id}:table/{prefix}-*",
+                        f"arn:aws:dynamodb:*:{account_id}:table/{prefix}-*/index/*",
+                        f"arn:aws:dynamodb:*:{account_id}:table/{prefix}-*/stream/*",
+                    ],
+                }
+            )
 
             # DynamoDB Service-level Operations (read-only, needed for discovery)
-            lambda_policy["Statement"].append({
-                "Sid": "DynamoDBServiceOperations",
-                "Effect": "Allow",
-                "Action": [
-                    "dynamodb:ListTables",
-                    "dynamodb:DescribeLimits"
-                ],
-                "Resource": "*"
-            })
+            lambda_policy["Statement"].append(
+                {
+                    "Sid": "DynamoDBServiceOperations",
+                    "Effect": "Allow",
+                    "Action": ["dynamodb:ListTables", "dynamodb:DescribeLimits"],
+                    "Resource": "*",
+                }
+            )
 
         print("# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("# LAMBDA WEB APPLICATION DEPLOYMENT POLICY")
@@ -1592,7 +1711,9 @@ def main():
             print("  ✓ bob-admin        (prefix: bob)", file=sys.stderr)
             print()
             print("Examples of INVALID manager usernames:", file=sys.stderr)
-            print("  ✗ jimmy            (no hyphen - would conflict with base user)", file=sys.stderr)
+            print(
+                "  ✗ jimmy            (no hyphen - would conflict with base user)", file=sys.stderr
+            )
             print("  ✗ admin            (no hyphen - cannot establish namespace)", file=sys.stderr)
             print()
             print(f"Suggested fix: Use '{username}-iam-sorry' instead", file=sys.stderr)
@@ -2035,9 +2156,8 @@ def main():
             session_token = profile.get("aws_session_token", "")
 
             # Check if encrypted
-            is_encrypted = (
-                access_key.startswith("__encrypted__:") and
-                secret_key.startswith("__encrypted__:")
+            is_encrypted = access_key.startswith("__encrypted__:") and secret_key.startswith(
+                "__encrypted__:"
             )
 
             # Check if temporary (has session token OR access key starts with ASIA)
@@ -2111,6 +2231,7 @@ def main():
                 try:
                     # Create a boto3 session with the environment credentials
                     import boto3
+
                     session = boto3.Session(
                         aws_access_key_id=env_access_key,
                         aws_secret_access_key=env_secret_key,
@@ -2446,7 +2567,9 @@ def main():
                         print(f"✓ IAM user '{base_username}' created")
 
                         # Generate temporary credentials for the base user (36h)
-                        print(f"Generating temporary credentials for '{base_username}' (36 hours)...")
+                        print(
+                            f"Generating temporary credentials for '{base_username}' (36 hours)..."
+                        )
                         base_credentials = get_temp_credentials_for_user(
                             manager_profile, base_username, 36 * 3600
                         )
@@ -2455,20 +2578,44 @@ def main():
 
                     except ClientError as e:
                         error_code = e.response["Error"]["Code"]
-                        print(f"Error: Failed to create base user '{base_username}' ({error_code})", file=sys.stderr)
+                        print(
+                            f"Error: Failed to create base user '{base_username}' ({error_code})",
+                            file=sys.stderr,
+                        )
                         print()
-                        print("You need elevated IAM permissions for this action. Choose based on your needs:", file=sys.stderr)
+                        print(
+                            "You need elevated IAM permissions for this action. Choose based on your needs:",
+                            file=sys.stderr,
+                        )
                         print()
-                        print(f"  1. To CREATE roles and users:  iam-sorry --print-admin-policy {profile_name}", file=sys.stderr)
-                        print(f"     (Full namespace management - requires admin permissions)", file=sys.stderr)
+                        print(
+                            f"  1. To CREATE roles and users:  iam-sorry --print-admin-policy {profile_name}",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"     (Full namespace management - requires admin permissions)",
+                            file=sys.stderr,
+                        )
                         print()
-                        print(f"  2. To REFRESH credentials only: iam-sorry --print-policy {profile_name}", file=sys.stderr)
-                        print(f"     (Minimal policy - only refresh existing users, cannot create)", file=sys.stderr)
+                        print(
+                            f"  2. To REFRESH credentials only: iam-sorry --print-policy {profile_name}",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"     (Minimal policy - only refresh existing users, cannot create)",
+                            file=sys.stderr,
+                        )
                         print()
-                        print("Send the policy output to your AWS administrator to grant permissions.", file=sys.stderr)
+                        print(
+                            "Send the policy output to your AWS administrator to grant permissions.",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                     except Exception as e:
-                        print(f"Error: Failed to create base user '{base_username}': {str(e).split(':')[0]}", file=sys.stderr)
+                        print(
+                            f"Error: Failed to create base user '{base_username}': {str(e).split(':')[0]}",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                 else:
                     print(f"✓ Base user '{base_username}' exists")
@@ -2491,13 +2638,9 @@ def main():
                                     "AWS": f"arn:aws:iam::{account_id}:user/{base_username}"
                                 },
                                 "Action": "sts:AssumeRole",
-                                "Condition": {
-                                    "StringEquals": {
-                                        "sts:ExternalId": profile_name
-                                    }
-                                }
+                                "Condition": {"StringEquals": {"sts:ExternalId": profile_name}},
                             }
-                        ]
+                        ],
                     }
 
                     # Retry role creation if base user hasn't propagated yet
@@ -2507,16 +2650,25 @@ def main():
 
                     for attempt in range(max_retries):
                         try:
-                            create_iam_role(manager_profile, role_name, trust_policy,
-                                            description=f"Role for {base_username} namespace")
+                            create_iam_role(
+                                manager_profile,
+                                role_name,
+                                trust_policy,
+                                description=f"Role for {base_username} namespace",
+                            )
                             role_created = True
                             print(f"✓ IAM role '{role_name}' created")
                             break
                         except ClientError as retry_error:
                             error_code = retry_error.response["Error"]["Code"]
-                            if error_code == "MalformedPolicyDocument" and attempt < max_retries - 1:
+                            if (
+                                error_code == "MalformedPolicyDocument"
+                                and attempt < max_retries - 1
+                            ):
                                 # Base user hasn't propagated yet
-                                print(f"⏳ Waiting {retry_delay}s for user '{base_username}' to propagate (attempt {attempt + 1}/{max_retries})...")
+                                print(
+                                    f"⏳ Waiting {retry_delay}s for user '{base_username}' to propagate (attempt {attempt + 1}/{max_retries})..."
+                                )
                                 time.sleep(retry_delay)
                                 retry_delay *= 1.5
                             else:
@@ -2529,10 +2681,7 @@ def main():
                     # STEP 3: Write role profile configuration to ~/.aws/config
                     role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
                     write_role_profile_config(
-                        profile_name,
-                        role_arn,
-                        base_username,
-                        profile_name  # external_id
+                        profile_name, role_arn, base_username, profile_name  # external_id
                     )
 
                     # Store the base username for later use
@@ -2540,17 +2689,38 @@ def main():
                 except ClientError as e:
                     error_code = e.response["Error"]["Code"]
                     if error_code == "AccessDenied":
-                        print(f"Error: Insufficient permissions to create role '{role_name}' ({error_code})", file=sys.stderr)
+                        print(
+                            f"Error: Insufficient permissions to create role '{role_name}' ({error_code})",
+                            file=sys.stderr,
+                        )
                         print()
-                        print("You need elevated IAM permissions for this action. Choose based on your needs:", file=sys.stderr)
+                        print(
+                            "You need elevated IAM permissions for this action. Choose based on your needs:",
+                            file=sys.stderr,
+                        )
                         print()
-                        print(f"  1. To CREATE roles and users:  iam-sorry --print-admin-policy {profile_name}", file=sys.stderr)
-                        print(f"     (Full namespace management - requires admin permissions)", file=sys.stderr)
+                        print(
+                            f"  1. To CREATE roles and users:  iam-sorry --print-admin-policy {profile_name}",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"     (Full namespace management - requires admin permissions)",
+                            file=sys.stderr,
+                        )
                         print()
-                        print(f"  2. To REFRESH credentials only: iam-sorry --print-policy {profile_name}", file=sys.stderr)
-                        print(f"     (Minimal policy - only refresh existing users, cannot create)", file=sys.stderr)
+                        print(
+                            f"  2. To REFRESH credentials only: iam-sorry --print-policy {profile_name}",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"     (Minimal policy - only refresh existing users, cannot create)",
+                            file=sys.stderr,
+                        )
                         print()
-                        print("Send the policy output to your AWS administrator to grant permissions.", file=sys.stderr)
+                        print(
+                            "Send the policy output to your AWS administrator to grant permissions.",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                     else:
                         print(f"Error: Failed to create role: {error_code}", file=sys.stderr)
@@ -2574,7 +2744,9 @@ def main():
                     create_iam_user(manager_profile, iam_username)
                     print(f"✓ IAM user '{iam_username}' created")
                 except Exception as e:
-                    print(f"Error: Failed to create IAM user: {str(e).split(':')[0]}", file=sys.stderr)
+                    print(
+                        f"Error: Failed to create IAM user: {str(e).split(':')[0]}", file=sys.stderr
+                    )
                     sys.exit(1)
         else:
             # User/role already exists
@@ -2587,7 +2759,10 @@ def main():
                 base_username = prefix
                 base_user_exists = verify_iam_user_exists(manager_profile, base_username)
                 if not base_user_exists:
-                    print(f"Error: Role exists but base user '{base_username}' does not exist", file=sys.stderr)
+                    print(
+                        f"Error: Role exists but base user '{base_username}' does not exist",
+                        file=sys.stderr,
+                    )
                     print(f"Create the base user first: iam-sorry {base_username}", file=sys.stderr)
                     sys.exit(1)
 
@@ -2595,10 +2770,7 @@ def main():
                 account_id = get_aws_account_id(manager_profile)
                 role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
                 write_role_profile_config(
-                    profile_name,
-                    role_arn,
-                    base_username,
-                    profile_name  # external_id
+                    profile_name, role_arn, base_username, profile_name  # external_id
                 )
 
                 # Store the base username for later use
@@ -2666,7 +2838,7 @@ def main():
 
     # For role profiles, we're done - config is written, exit
     # Roles are assumed by the base user, not used directly
-    if 'is_role' in locals() and is_role:
+    if "is_role" in locals() and is_role:
         print()
         print(f"✓ Role profile '{args.profile_to_manage}' ready to use")
         print(f"Usage: AWS_PROFILE={args.profile_to_manage} aws <command>")
