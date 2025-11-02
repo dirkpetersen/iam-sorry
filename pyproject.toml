@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iam-sorry"
-version = "0.2.1"
+version = "0.2.2"
 description = "AWS Credentials Manager - Pull temporary credentials for an IAM user with optional SSH-key encryption"
 readme = "README.md"
 requires-python = ">=3.10"

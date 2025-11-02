@@ -6,57 +6,104 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/iam-sorry.svg)](https://pypi.org/project/iam-sorry/)
 [![Build Status](https://github.com/dirkpetersen/iam-sorry/workflows/Publish%20to%20PyPI/badge.svg)](https://github.com/dirkpetersen/iam-sorry/actions)
 
-A powerful Python CLI utility for managing temporary AWS credentials with optional SSH-key based encryption. Generate temporary IAM credentials, protect manager profiles with AES-256 encryption, and inject credentials into batch operations.
+A powerful CLI utility for delegated management of temporary AWS credentials and namespaces. This tool empowers teams by separating responsibilities and simplifying access workflows.
+
+- For AWS Administrators:
+
+  - Secure Delegation: Set up a single management IAM user with self rotating, encrypted, permanent credentials for each of your power users . This user acts as a broker, eliminating the need to manage credentials for every end-user directly.
+  - Enforce Isolation: Safely partition a single AWS account into "namespaces," ensuring that teams or individuals can only operate within their designated area.
+  - Clear separation between authentication (self-service, roles and role policy creation) and autorization (Admin still needs to apply policies giving access to AWS services)
+
+- For End-Users (Research Software Engineers, Systems Administrators):
+
+  - Self-Service Access: Refresh your temporary AWS credentials with a single, simple command.
+  - Namespace Autonomy: Gain the freedom to manage all necessary resources within your assigned namespace without waiting for an administrator.
+  - Simple Interface: Get the access you need through a straightforward CLI, without needing deep expertise in AWS IAM policies.
 
 **Key Features**:
-- ✅ Generate temporary AWS credentials (max 36 hours)
-- ✅ SSH-key based AES-256 encryption for powerful profiles
-- ✅ Automatic encryption validation (ED25519, password-protected)
-- ✅ Batch operation support with environment injection
-- ✅ Lazy decryption: credentials stay encrypted on disk
-- ✅ Support for permanent and temporary profiles
+- ✅ **Auto-Bootstrap**: Zero-config setup from environment variables (permanent or temporary)
+- ✅ **Temporary Credentials**: Generate AWS credentials with up to 36 hours validity
+- ✅ **SSH-Key Encryption**: AES-256-GCM encryption for manager profiles using password-protected SSH keys
+- ✅ **Automatic Rotation**: Admin-provided credentials automatically rotated during bootstrap
+- ✅ **Role Management**: Create IAM roles with automatic base user setup and trust policies
+- ✅ **Namespace Isolation**: Prefix-based access control prevents cross-namespace user management
+- ✅ **User Delegation**: Transfer user ownership with permanent tag-based tracking (--chown)
+- ✅ **Automatic Refresh**: Expired credentials auto-refresh during --eval operations
+- ✅ **Policy Generation**: Print admin or refresh-only policies for any namespace prefix
+- ✅ **Profile Verification**: Check and fix AWS config files (--fix-profiles)
+- ✅ **Lambda Policies**: Generate deployment policies with namespace-based S3 and DynamoDB access
+- ✅ **Python API**: Use as library with create_session_with_profile() for boto3 integration
+- ✅ **Lazy Decryption**: Credentials stay encrypted on disk, decrypted only when needed
 
 ## Quick Start
 
-### Basic Usage
+This example shows how an AWS Administrator provisions a new manager account `sue-mgr` using their AWS profile `aws-admin`, and how end user `sue` completes the setup.
+
+### AWS Administrator
+
+Create the manager user with a single command:
 
 ```bash
-# 1. Store your management profile (one-time)
-# Edit ~/.aws/credentials with your manager IAM credentials:
-[iam-sorry]
-aws_access_key_id = AKIA...
-aws_secret_access_key = ...
-region = us-west-2
+iam-sorry --profile aws-admin --create-iam-sorry sue-mgr
+```
 
-# 2. Encrypt the iam-sorry profile (one-time, optional)
-iam-sorry --encrypt
-# ✓ Manager profile 'iam-sorry' encrypted with SSH key
+This creates IAM user `sue-mgr`, attaches the namespace management policy, and generates AWS credentials.
 
-# 3. Create and generate temporary credentials for users in your namespace
-iam-sorry iam-admin
-# ✓ IAM user 'iam-admin' created
-# ✓ Region: us-west-2
-# ✓ Successfully updated profile 'iam-admin'
-# ✓ Credentials expire at: 2025-10-26T12:00:00
+### End User Setup
 
-# 4. Run batch operations with encrypted manager credentials
-eval $(iam-sorry --eval iam-sorry)
+Sue receives an email from the Administrator with:
+1. Instructions for setting up agent-managed SSH keys
+2. Installation command: `pip install iam-sorry`
+3. Standard AWS credentials 
 
-for user in user1 user2 user3; do
-  aws iam create-user --user-name $user
-done
+Sue exports the credentials and runs iam-sorry for auto-bootstrap:
 
-# 5. Cleanup
+```bash
+export AWS_ACCESS_KEY_ID='AKIAXXXXXXXXXXXXXXXXXXXX'
+export AWS_SECRET_ACCESS_KEY='MU/KBXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+export AWS_REGION='us-west-2'  # Change if needed
+iam-sorry
+```
+
+**What happens during bootstrap:**
+- Sets up AWS profile `[sue-mgr]` with encrypted credentials
+- Automatically rotates the admin-provided credentials (creates permanent key, disables old one)
+- Creates base IAM user `sue` with AWS profile `[sue]`
+- Generates 36-hour temporary credentials for `sue`
+
+### Daily Usage
+
+Sue can now refresh credentials with a single command:
+
+```bash
+iam-sorry sue
+```
+
+This works as long as she's logged into her shell with her SSH key loaded in ssh-agent.
+
+### Shell Scripts
+
+For automated scripts, Sue can ensure AWS credentials are available as environment variables with automatic refresh if expired:
+
+```bash
+eval $(iam-sorry --eval sue)
+# AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN now set
+# Your AWS commands here...
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
 
-**Key Behavior:**
-- Management profile defaults to `iam-sorry` (override with `--profile` or `AWS_PROFILE`)
-- Users in your namespace (e.g., `iam-*` for manager `iam-admin`) are auto-created
-- `~/.aws/config` is auto-populated with region from iam-sorry profile
-- **CRITICAL**: The management profile is NEVER refreshed (permanent credentials must not be replaced)
-- **CRITICAL**: The iam-sorry profile credentials MUST be encrypted (`iam-sorry --encrypt`)
-- To use AWS, always generate a temporary profile: `./iam-sorry iam-bedrock`
+### Administrator: Assign Permissions
+
+The AWS Administrator can now assign policies to user `sue` or to roles that Sue creates using iam-sorry:
+
+```bash
+# Assign permissions to Sue's base user
+aws iam attach-user-policy --user-name sue --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+
+# Or to a role Sue created
+aws iam put-role-policy --role-name iam-sorry-sue-lambda --policy-name lambda-deploy --policy-document file://policy.json
+``` 
+
 
 ## Vision & Architecture
 
@@ -105,27 +152,27 @@ This interim solution leverages existing security infrastructure already in plac
 The longer-term architectural vision is a centralized, auditable system:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  User Authentication                                       │
+┌───────────────────────────────────────────────────────────┐
+│                                                           │
+│  User Authentication                                      │
 │  ├─ Active Directory / LDAP                               │
 │  ├─ Kerberos (krb5)                                       │
 │  └─ Headless authentication (no browser required)         │
-│         ↓                                                  │
-│  Department IAM Service                                    │
+│         ↓                                                 │
+│  Department IAM Service                                   │
 │  ├─ Service runs with high-privilege IAM role             │
 │  ├─ Receives delegated requests from users                │
 │  ├─ All actions logged with user identity                 │
 │  ├─ Audit trail for compliance                            │
 │  └─ Permission model based on user group                  │
-│         ↓                                                  │
-│  AWS IAM Actions                                           │
+│         ↓                                                 │
+│  AWS IAM Actions                                          │
 │  ├─ create-user, delete-user                              │
 │  ├─ attach-policy, detach-policy                          │
 │  ├─ create-access-key, rotate-key                         │
 │  └─ All traceable to user who initiated action            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+│                                                           │
+└───────────────────────────────────────────────────────────┘
 
 Benefits:
   ✓ Single point of IAM access (easier to audit)

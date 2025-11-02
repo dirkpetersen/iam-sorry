@@ -4,40 +4,113 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**aws-creds** is a Python CLI utility that manages temporary AWS credentials for IAM users with optional SSH-key based encryption. It integrates with AWS IAM and STS to fetch short-lived session tokens, encrypt them optionally, and update local AWS credential profiles with full security controls.
+**iam-sorry** is a Python CLI utility for managing temporary AWS credentials with optional SSH-key based encryption. Generate temporary IAM credentials, protect manager profiles with AES-256 encryption, and inject credentials into batch operations.
 
 **Key Innovation**: Powerful manager profile credentials can be encrypted at-rest using your ED25519 SSH key, then decrypted on-demand for batch operations—no plaintext on disk.
 
+**Key Features**:
+- ✅ Generate temporary AWS credentials (max 36 hours)
+- ✅ SSH-key based AES-256 encryption for powerful profiles
+- ✅ Automatic encryption validation (ED25519, password-protected)
+- ✅ Batch operation support with environment injection
+- ✅ Lazy decryption: credentials stay encrypted on disk
+- ✅ Support for permanent and temporary profiles
+- ✅ IAM role creation with automatic base user setup
+- ✅ Delegation system with tag-based ownership
+- ✅ Automatic credential refresh for expired sessions
+- ✅ Python API support for programmatic access
+
 ## Architecture
 
-**Single-file design**: The entire application is in `aws-creds` (Python 3 script, ~700 lines).
+**Multi-module design**:
+- `iamsorry/cli.py` - Command-line interface and workflow orchestration
+- `iamsorry/core.py` - Core IAM operations, encryption/decryption, file I/O (~1000 lines)
 
-### Core Workflow
+### Core Workflows
 
-1. **Credential Generation**:
-   - Takes a manager profile (from `--profile` or `AWS_PROFILE` env var)
-   - Takes a target profile/username to manage
-   - Looks up IAM user (via existing access key or username)
-   - Calls AWS STS `GetSessionToken` for temporary credentials
-   - Updates target profile with credentials
+#### 1. Bootstrap Workflow (Initial Setup)
+```
+Environment Variables (permanent or temporary creds)
+         ↓
+Detect credential type (AKIA* vs ASIA*)
+         ↓
+If temporary: Use iam:CreateAccessKey to generate permanent key
+If permanent: Use directly
+         ↓
+Validate SSH key is password-protected
+         ↓
+Encrypt with AES-256-GCM using SSH key
+         ↓
+Store in [iam-sorry] profile
+```
 
-2. **Encryption** (optional):
-   - Validates SSH key is ED25519 and password-protected
-   - Derives AES-256 key from SSH key using HKDF
-   - Encrypts access key and secret key individually with AES-256-GCM
-   - Stores with `__encrypted__:` prefix
-   - Session token remains unencrypted (temporary)
+#### 2. Credential Generation Workflow
+```
+Manager profile (e.g., iam-sorry)
+         ↓
+Validate target username matches namespace prefix
+         ↓
+Check if IAM user exists
+  - If not: Create IAM user (if matches namespace)
+         ↓
+Call AWS STS GetSessionToken (36 hours)
+         ↓
+Update target profile with temporary credentials
+```
 
-3. **Decryption & Injection** (for batch mode):
-   - Auto-detects encrypted credentials
-   - Decrypts on-demand using SSH key
-   - Outputs shell export statements
-   - User runs `eval` to inject into environment
+#### 3. Role Creation Workflow
+```
+Role requested (e.g., "iam-admin")
+         ↓
+Auto-create base user (e.g., "iam")
+         ↓
+Generate 36h temp credentials for base user
+         ↓
+Create IAM role with trust policy (base user can assume)
+         ↓
+Write role profile config (~/.aws/config)
+```
+
+#### 4. Encryption/Decryption Workflow
+```
+Permanent Manager Credentials
+         ↓ (one-time setup)
+Validate SSH key: ED25519 + password-protected
+         ↓
+Derive AES-256 key via HKDF-SHA256 from SSH key
+         ↓
+Encrypt individually with AES-256-GCM + random nonce
+         ↓
+Store with __encrypted__: prefix
+         ↓
+On-demand decryption (never persisted to disk)
+```
+
+#### 5. Batch Operations Workflow
+```
+eval $(iam-sorry --eval profile)
+         ↓
+Detect if encrypted (read __encrypted__: prefix)
+         ↓
+If encrypted: Prompt for SSH passphrase, decrypt
+If plaintext: Use directly
+         ↓
+Check if credentials expired (5-min threshold)
+  - If expired: Auto-refresh with manager profile
+         ↓
+Export AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+         ↓
+Inject into shell environment
+         ↓
+Run batch operations
+         ↓
+User manually: unset AWS_* variables
+```
 
 ### Profile Types & Security Model
 
 ```
-Manager Profile (usermanager)
+Manager Profile (usermanager, iam-sorry user)
 ├─ Type: Permanent credentials (high privilege)
 ├─ Encryption: ✓ Optional (must be explicitly named)
 ├─ Risk: HIGH (data access)
@@ -48,7 +121,7 @@ Service Profile (bedrock)
 ├─ Type: Permanent credentials (low privilege)
 ├─ Encryption: ✗ Not encrypted (permanent but low risk)
 ├─ Risk: LOW (financial only)
-├─ Usage: Direct service access
+├─ Usage: Direct service access, not managed by iam-sorry
 └─ Storage: Plaintext in ~/.aws/credentials
 
 Generated Profile (admin, dev, etc)
@@ -176,73 +249,241 @@ The IAM policy includes statements to enforce permanent restrictions via tagging
 - CreateUsers statement only allows `iam:CreateUser`
 - Group management is restricted to avoid unauthorized access escalation
 
+## Use Case Overview
+
+### 1. Broad Temporary Access (Most Common)
+- Short-lived credentials for batch operations (1-36 hours)
+- Limited by duration - auto-expiration provides security boundary
+- Ideal for: HPC jobs, data processing, CI/CD pipelines
+- Example: `iam-sorry jimmy-admin` → 36h temporary credentials
+
+### 2. Narrow Permanent Access (Low-Risk Services)
+- Long-lived credentials for specific services
+- Limited permissions per service role
+- Examples: bedrock, analytics, logging services
+- Ideal for: Service-to-service authentication
+
+### 3. Powerful IAM Access (Critical, Encrypted)
+- Full IAM management capabilities
+- High privilege, sensitive credentials
+- Protected with SSH-key encryption
+- Ideal for: Infrastructure automation, user provisioning
+- Example: `iam-sorry --encrypt` → encrypt manager credentials
+
+### 4. Role-Based Permission Profiles
+- Create IAM roles for different job types
+- Base user with 36h temp credentials can assume roles
+- Roles managed by AWS admins (permissions only)
+- Ideal for: Multi-role architectures, delegated access
+- Example: `iam-sorry jimmy-admin` (with suffix) → creates role + base user
+
+### 5. Delegation & Ownership Transfer
+- Delegate user to another owner with `--chown`
+- Original manager gets read-only access post-delegation
+- Permanent tag-based ownership tracking
+- Ideal for: Manager onboarding, responsibility transfer
+
 ## Command Reference
 
-### Basic Credential Generation
+### Auto-Bootstrap (Automatic Setup)
+
+**Easiest way to set up iam-sorry for the first time!**
 
 ```bash
-# Generate temporary credentials using environment variable
-AWS_PROFILE=usermanager ./aws-creds admin
+# AUTO-BOOTSTRAP: Just run iam-sorry with credentials in environment
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+iam-sorry
 
-# Using command-line argument
-./aws-creds --profile usermanager admin
+# Or with explicit profile specification:
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+iam-sorry --profile iam-sorry
 
-# Specify duration (1-36 hours, default: 36)
-./aws-creds --profile usermanager --duration 12 admin
-
-# Refresh default profile (prompts for confirmation)
-AWS_PROFILE=usermanager ./aws-creds
+# With temporary credentials (auto-creates permanent key):
+export AWS_ACCESS_KEY_ID=ASIA...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_SESSION_TOKEN=...
+iam-sorry
 ```
 
-### Print Policy
+**Auto-Bootstrap Workflow**:
+1. Detects environment credentials and `iam-sorry` profile missing
+2. If temporary (ASIA*): Creates new permanent access key automatically
+3. Validates SSH key is password-protected
+4. Determines region (in priority order):
+   - `AWS_REGION` environment variable
+   - `AWS_DEFAULT_REGION` environment variable
+   - Existing region from `~/.aws/config` (iam-sorry or default profile)
+   - Defaults to `us-west-2` if nothing found
+5. Encrypts credentials with AES-256-GCM
+6. Stores in `[iam-sorry]` profile with region in config
+7. **Done!** Ready to use
+
+**Prerequisites**:
+- Password-protected ED25519 SSH key at `~/.ssh/id_ed25519`
+- AWS credentials (permanent or temporary) in environment variables
+- `iam-sorry` profile does NOT exist yet
+- (Optional) `AWS_REGION` or `AWS_DEFAULT_REGION` for region selection
+
+**Example Output**:
+```
+======================================================================
+Auto-Bootstrapping iam-sorry Profile
+======================================================================
+
+Environment credentials: PERMANENT (will use directly)
+
+Validating SSH key...
+✓ SSH key is password-protected
+
+Encrypting credentials...
+✓ Credentials encrypted and stored
+
+Configuring region: eu-west-1
+✓ Config file updated: ~/.aws/config
+
+======================================================================
+✓ iam-sorry Profile Successfully Bootstrapped!
+======================================================================
+
+Profile created: [iam-sorry]
+Credentials: ENCRYPTED (AES-256-GCM)
+Location: ~/.aws/credentials
+Region: eu-west-1
+Config: ~/.aws/config
+```
+
+### Policy Commands
 
 ```bash
-# Show the recommended IAM policy using current Unix username as prefix
-iam-sorry --print-policy
+# Show full admin policy for creating users and roles
+iam-sorry --print-admin-policy
+iam-sorry --print-admin-policy dirk
 
-# Show the recommended IAM policy for a specific namespace prefix
-iam-sorry --print-policy iam
-iam-sorry --print-policy alice
-iam-sorry --print-policy bob
+# Show minimal refresh-only policy
+iam-sorry --print-policy
+iam-sorry --print-policy dirk
 
 # Output includes:
-# 1. JSON policy document personalized for the namespace
+# 1. JSON policy document personalized for namespace
 # 2. Step-by-step instructions for AWS administrator
 # 3. Console instructions for attaching inline policy
 ```
 
-**Behavior**:
-- `--print-policy` (no argument): Uses current Unix shell username as the prefix (via `pwd.getpwuid(os.getuid())`)
-- `--print-policy <PREFIX>` (with argument): Uses the specified prefix
-- Generated policy shows which IAM users the manager can create and manage
-- Example: Manager with prefix `iam` can manage `iam` and `iam-*` users
-- Output ends with instructions for AWS administrator including:
-  - User creation guidance (e.g., create `dp-mgr` with `-mgr` suffix)
-  - IAM Console navigation path
-  - Steps to attach inline policy via JSON
-  - Credentials configuration command
-
-### Encryption (Manager Profile Only)
+### Manager User Setup (With Temporary Credentials for End User)
 
 ```bash
-# One-time: Encrypt the manager profile
-./aws-creds --profile usermanager --encrypt
+# Create iam-sorry manager user (requires admin profile)
+iam-sorry --profile iam-admin --create-iam-sorry dirk-iam-sorry
+
+# This will:
+# 1. Create IAM user with name dirk-iam-sorry
+# 2. Attach namespace management policy
+# 3. Generate TEMPORARY credentials (ASIA) valid for 36 hours
+# 4. Display temporary credentials for safe transmission
+# 5. Print policy JSON
+# 6. Show NEXT STEPS for admin (warn about 36-hour expiration)
+# 7. Generate END USER INSTRUCTIONS with:
+#    - ⏰ URGENT: 36-hour expiration warning
+#    - Actual ASIA credentials (copy-paste ready)
+#    - SSH key setup link
+#    - Export commands with SESSION_TOKEN
+#    - Installation command
+#    - Auto-bootstrap command (auto-creates permanent AKIA)
+#    - Verification command
+```
+
+**End User receives (with temporary credentials):**
+```
+⏰ URGENT: These temporary credentials expire in 36 hours
+   Complete these steps within that time!
+
+Follow these steps to bootstrap your iam-sorry profile:
+
+1. Set up keychain with password-protected SSH key (if not already done):
+   https://dirkpetersen.github.io/docs/shell/ssh/
+
+2. Export the temporary AWS credentials and region in terminal:
+   export AWS_ACCESS_KEY_ID='ASIAQXXXXXXXXX3H3RHQ'
+   export AWS_SECRET_ACCESS_KEY='...'
+   export AWS_SESSION_TOKEN='FwoGZXIvYXdzEBw...'
+   export AWS_REGION='us-west-2'
+
+3. Install or upgrade iam-sorry:
+   python3 -m pip install --upgrade iam-sorry
+
+4. Run iam-sorry to bootstrap your profile:
+   iam-sorry
+
+   This will:
+   • Auto-detect your temporary environment credentials
+   • Use iam:CreateAccessKey to create permanent credentials
+   • Create encrypted [iam-sorry] profile
+   • Store permanent credentials in ~/.aws/credentials
+
+5. Verify credentials are updated:
+   iam-sorry --print-policy
+
+6. Unset temporary credentials from environment:
+   unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION
+```
+
+**Security Benefits:**
+- Temporary credentials automatically expire after 36 hours
+- Admin doesn't need to store/manage permanent keys
+- End user's permanent credentials are auto-generated and encrypted
+- No risk of leaked permanent credentials being shared via email
+- Once bootstrapped, original temporary credentials can be discarded
+
+### Credential Generation
+
+```bash
+# Generate temporary credentials (auto-creates user if matches namespace)
+iam-sorry jimmy-admin
+
+# Refresh existing profile
+iam-sorry jimmy-admin
+
+# Specify duration (1-36 hours, default: 36)
+iam-sorry --duration 12 jimmy-admin
+
+# Using environment variable instead of default iam-sorry profile
+AWS_PROFILE=usermanager iam-sorry jimmy-admin
+```
+
+### Role Management
+
+```bash
+# Create role with automatic base user (e.g., jimmy-admin → iam-sorry-jimmy-admin role)
+iam-sorry jimmy-admin
+# → Creates: base user "jimmy", role "iam-sorry-jimmy-admin", config entry
+
+# Use role with AWS CLI
+AWS_PROFILE=jimmy-admin aws s3 ls
+```
+
+### Encryption & Decryption
+
+```bash
+# One-time: Encrypt the iam-sorry profile
+iam-sorry --encrypt
 
 # View encrypted credentials (ciphertext)
-./aws-creds --show-encrypted usermanager
+iam-sorry --show-encrypted iam-sorry
 
-# View decrypted credentials (plaintext, requires SSH passphrase)
-./aws-creds --show-decrypted usermanager
+# View decrypted credentials (requires SSH passphrase)
+iam-sorry --show-decrypted iam-sorry
+
+# View plaintext credentials (for unencrypted profiles)
+iam-sorry --show-decrypted bedrock
 ```
 
 ### Batch Operations (Environment Injection)
 
 ```bash
-# Generate temporary credentials for batch operations
-./aws-creds --profile usermanager admin
-
-# Inject into environment (auto-decrypts if encrypted)
-eval $(./aws-creds --eval admin)
+# Inject encrypted manager credentials into environment
+eval $(iam-sorry --eval iam-sorry)
 
 # Run batch IAM operations
 for user in user1 user2 user3; do
@@ -253,6 +494,40 @@ done
 # Cleanup
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
+
+### Delegation Operations
+
+```bash
+# Create user and delegate to another owner
+iam-sorry jimmy-bedrock --chown jimmy
+
+# User manages their own credentials after delegation
+jimmy$ iam-sorry jimmy-bedrock
+
+# Original manager gets read-only access
+dirk-admin$ iam-sorry jimmy-bedrock
+# ⚠ User 'jimmy-bedrock' is delegated to 'jimmy'
+# You can view this user but cannot manage credentials (read-only access)
+```
+
+### Profile Verification & Fix
+
+```bash
+# Check and fix AWS config profiles
+iam-sorry --fix-profiles
+
+# Output shows:
+# 1. Profiles in ~/.aws/credentials added to ~/.aws/config (with region)
+# 2. Profiles in ~/.aws/config but not in ~/.aws/credentials (orphaned)
+```
+
+**Behavior**:
+- Scans all profiles in `~/.aws/credentials`
+- Ensures each has corresponding entry in `~/.aws/config`
+- Adds missing profiles with region (uses iam-sorry profile region or default)
+- Uses `[profile NAME]` naming convention (except `[default]`)
+- Reports orphaned profiles (in config but no credentials)
+- Non-destructive: Only adds entries, doesn't remove anything
 
 ## SSH Key-Based Encryption
 
@@ -537,35 +812,66 @@ To add alternative encryption (GPG, master password, etc):
 5. **CloudTrail**: Audit credential usage
 6. **Secrets Manager**: For application secrets, not user credentials
 
+## Documentation Files
+
+- **`README.md`** - User documentation, installation, getting started
+- **`use-cases.md`** - Comprehensive guide covering 30+ use cases across 10 workflow categories
+- **`CLAUDE.md`** - This file: Technical guidance for Claude Code development
+- **`roles-feature.md`** - Architecture documentation for hybrid user+role system
+
 ## Recent Improvements & Bug Fixes
 
-### User-Facing Features (Session 2024-10-25)
+### User-Facing Features (Latest Session)
 
-1. **Auto-Create Users in Namespace**:
+1. **AUTO-BOOTSTRAP: Zero-Config Setup from Environment Variables** ⭐
+   - `iam-sorry` (no arguments) with credentials in environment auto-bootstraps
+   - **Permanent credentials (AKIA*)**: Stores and encrypts directly
+   - **Temporary credentials (ASIA*)**: Automatically creates permanent access key
+   - **One-command setup**: `export AWS_*; iam-sorry` → encrypted profile ready
+   - Requires password-protected ED25519 SSH key
+   - Validates encryption capability before storing anything
+   - Comprehensive status messages guiding user through process
+   - Example workflows:
+     - `export AWS_ACCESS_KEY_ID=AKIA...; iam-sorry` → Done! Profile encrypted
+     - `export AWS_ACCESS_KEY_ID=ASIA...; iam-sorry` → Creates permanent key, encrypts, stores
+   - **Most frictionless first-time setup experience**
+
+2. **Role-Based Permission Profiles**:
+   - Detect role profiles by presence of `source_profile` in `~/.aws/config`
+   - Auto-create base user when creating role (e.g., `iam-admin` → creates `iam` user)
+   - Generate 36h temp credentials for base user
+   - Create IAM role with trust policy (only who can assume, not what they can do)
+   - Roles support separation of authentication (user creation) vs authorization (permission policies)
+   - Automatic config file writing with standard AWS fields
+
+3. **Dual Policy System**:
+   - `--print-admin-policy`: Full namespace management (users, roles, keys, tags)
+   - `--print-policy`: Minimal refresh-only (credential refresh without creation)
+   - Clear messaging explains which policy is needed for which operation
+
+4. **Auto-Create Users in Namespace**:
    - Users matching manager's namespace prefix are auto-created if they don't exist
    - Prefix validation happens first (no AWS API calls until validated)
-   - Workflow: `./iam-sorry iam-bedrock` → creates user, generates credentials
+   - Workflow: `iam-sorry iam-bedrock` → creates user, generates credentials
    - Previously required `--chown` for user creation
 
-2. **AWS Config File Generation**:
+5. **AWS Config File Generation**:
    - `~/.aws/config` is auto-populated when creating new profiles
    - Profile section format: `[profile NAME]` (or `[default]` for default profile)
    - Region is automatically read from `iam-sorry` profile in config
-   - Region is printed during profile creation: `✓ Region: us-west-2`
+   - Standard AWS fields: `role_arn`, `source_profile`, `external_id`, `duration_seconds`
 
-3. **Default Profile Behavior** (with Safety Checks):
+6. **Default Profile Behavior** (with Safety Checks):
    - When no profile name specified, defaults to management profile (`iam-sorry` by default)
    - Can be overridden via: `--profile` argument → `AWS_PROFILE` env var → `iam-sorry` default
    - **CRITICAL SAFETY**: Prevents refreshing the management profile with temporary credentials
    - **CRITICAL SAFETY**: Enforces encryption on iam-sorry profile credentials
-   - If credentials not encrypted: shows error with `iam-sorry --encrypt` command
-   - If user tries `./iam-sorry` explicitly: shows error with guidance to create temporary profiles
-   - Exceptions: `--encrypt`, `--print-policy`, `--eval` work before encryption check
+   - Exceptions: `--encrypt`, `--print-policy`, `--eval`, bootstrap operations work before encryption check
 
-4. **Improved Help Text**:
-   - `--profile`: Clear explanation of default and override hierarchy
-   - `--encrypt`: Now says "Encrypt the iam-sorry profile" instead of vague "manager profile"
-   - Profile argument: Explains it defaults to management profile when omitted
+7. **Improved Help Text & Error Messages**:
+   - Clear explanation of profile hierarchy and defaults
+   - Specific error messages for different failure scenarios
+   - Actionable guidance pointing to appropriate policy commands
 
 ### Critical Safety Mechanisms
 
@@ -589,19 +895,41 @@ To add alternative encryption (GPG, master password, etc):
 
 ### Critical Bug Fixes
 
-1. **Buffer Overflow Prevention** (SSH Key Parsing):
+1. **Credential Rotation During Bootstrap**:
+   - **Enhancement**: Admin-provided permanent credentials are now automatically rotated during bootstrap
+   - **Workflow**: Use admin credentials → Create new permanent credentials → Delete admin credentials → Encrypt new credentials
+   - **Security Benefit**: Admin-provided credentials are single-use only and immediately revoked
+   - **Fallback**: If rotation fails, uses admin credentials directly with warning
+   - Location: `cli.py:225-282`
+
+2. **Base User Auto-Creation During Bootstrap**:
+   - **Enhancement**: Automatically creates base user during bootstrap if it doesn't exist
+   - **Purpose**: Ensures base user is available for role creation without manual intervention
+   - **Workflow**: After bootstrap completes → Check if base user exists → Create if needed → Generate credentials
+   - Location: `cli.py:382-417`
+
+3. **AWS Eventual Consistency Handling**:
+   - **Issue**: Newly created IAM users/keys take time to propagate through AWS systems
+   - **Fixes Applied**:
+     - Auto-bootstrap CreateAccessKey: Retry up to 5 times with exponential backoff (3s start)
+     - Role creation with trust policy: Retry up to 5 times if MalformedPolicyDocument (user not propagated)
+     - Access key usage for GetSessionToken: Retry up to 5 times (2s start)
+   - **Impact**: Commands succeed on first run instead of requiring user to retry manually
+   - Locations: `cli.py:149-180` (bootstrap), `cli.py:1808-1832` (role creation)
+
+4. **Buffer Overflow Prevention** (SSH Key Parsing):
    - Added bounds checking on OPENSSH key format parsing
    - Validates `cipher_len` against buffer size and max 1024 bytes
    - Prevents malformed SSH keys from causing crashes
    - Location: `core.py:77-79`
 
-2. **Tag Check Before User Creation** (Race Condition):
+5. **Tag Check Before User Creation** (Race Condition):
    - Moved owner tag validation from after credential generation to before
    - Prevents resource waste if user already delegated
    - Stops inconsistent state if multiple processes try to --chown simultaneously
    - Location: `cli.py:359-372`
 
-3. **Nonce Length Validation** (Encryption):
+6. **Nonce Length Validation** (Encryption):
    - Validates encrypted data is at least 29 bytes (12-byte nonce + 1-byte ciphertext + 16-byte auth tag)
    - Prevents IndexError on corrupted encrypted data
    - Clear error message about data corruption
@@ -609,19 +937,19 @@ To add alternative encryption (GPG, master password, etc):
 
 ### Moderate Bug Fixes
 
-4. **ARN Parsing for Non-User Credentials**:
+5. **ARN Parsing for Non-User Credentials**:
    - Now detects and rejects assumed roles, federated users, and root account
    - Each ARN type has specific error message with actionable fix
    - Prevents confusing errors when using role credentials
    - Location: `core.py:278-313`
 
-5. **Credential Refresh Permission Validation**:
+6. **Credential Refresh Permission Validation**:
    - Checks owner tags in `--eval` auto-refresh path
    - Prevents original manager from bypassing delegation
    - Ensures only owner can refresh delegated user credentials
    - Location: `cli.py:179-205`
 
-6. **Race Condition in Tag Application** (--chown):
+7. **Race Condition in Tag Application** (--chown):
    - Implements retry logic with exponential backoff (3 attempts)
    - Re-checks tags immediately before applying (not just initially)
    - Detects if another process delegated the user while waiting
@@ -629,30 +957,30 @@ To add alternative encryption (GPG, master password, etc):
 
 ### Minor Bug Fixes & Improvements
 
-7. **Empty Username Validation**:
+8. **Empty Username Validation**:
    - Rejects empty or whitespace-only usernames in prefix validation
    - Validates both manager and target usernames
    - Location: `core.py:325-330`
 
-8. **Enhanced SSH Key Error Messages**:
+9. **Enhanced SSH Key Error Messages**:
    - `FileNotFoundError`: Shows how to generate ED25519 key or configure path
    - `PermissionError`: Shows exact chmod command needed
    - Decryption failures: Lists possible causes (wrong key, tampered data, passphrase changed)
    - Location: `core.py:120-136, 205-243`
 
-9. **ConfigParser Case Sensitivity**:
-   - Fixed AWS credential key case preservation with `config.optionxform = str`
-   - Ensures `AWS_ACCESS_KEY_ID` is not lowercased to `aws_access_key_id`
-   - Location: `core.py:547`
+10. **ConfigParser Case Sensitivity**:
+    - Fixed AWS credential key case preservation with `config.optionxform = str`
+    - Ensures `AWS_ACCESS_KEY_ID` is not lowercased to `aws_access_key_id`
+    - Location: `core.py:547`
 
 ### Security Improvements
 
-10. **Shell Injection Prevention**:
+11. **Shell Injection Prevention**:
     - Uses `shlex.quote()` for all credential values in export statements
     - Prevents malformed credentials from breaking shell syntax
     - Location: `cli.py:247-250`
 
-11. **File Permissions Race Condition**:
+12. **File Permissions Race Condition**:
     - Uses `os.open()` with `O_CREAT` and mode `0o600` atomically
     - Prevents brief window where credentials are world-readable during file creation
     - Eliminates separate `chmod()` call that could race with other processes
